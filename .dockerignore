@@ -1,0 +1,11 @@
+.git
+.env
+.env.*
+!.env.example
+runtime/
+*.sqlite*
+__pycache__/
+*.pyc
+tests/
+*.key
+*.pem

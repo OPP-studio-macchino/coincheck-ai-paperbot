@@ -1,0 +1,85 @@
+name: coincheck-ai-paperbot
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:?required}
+      POSTGRES_USER: ${POSTGRES_USER:?required}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?required}
+    volumes:
+      - dbdata:/var/lib/postgresql/data
+      - ./schema.sql:/docker-entrypoint-initdb.d/001-schema.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks: [internal]
+  api:
+    build: .
+    command: ["uvicorn", "app.api:app", "--host", "0.0.0.0", "--port", "8000"]
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
+      DASHBOARD_TOKEN: ${DASHBOARD_TOKEN:?required}
+      DRY_RUN: "true"
+      LIVE_TRADING_ENABLED: "false"
+    depends_on:
+      db: {condition: service_healthy}
+    networks: [internal]
+    read_only: true
+    tmpfs: [/tmp]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/healthz',timeout=3)"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+  market:
+    build: .
+    command: ["python", "-m", "app.market_worker"]
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
+      DRY_RUN: "true"
+      LIVE_TRADING_ENABLED: "false"
+      BUY_BUDGET_JPY: "50000"
+      INITIAL_CASH_JPY: "100000"
+    depends_on:
+      db: {condition: service_healthy}
+    networks: [internal]
+    read_only: true
+    tmpfs: [/tmp]
+  news:
+    build: .
+    command: ["python", "-m", "app.news_worker"]
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENAI_MODEL: ${OPENAI_MODEL:-gpt-5-mini}
+      NEWS_MODE: ${NEWS_MODE:-mock}
+      DRY_RUN: "true"
+      LIVE_TRADING_ENABLED: "false"
+    depends_on:
+      db: {condition: service_healthy}
+    networks: [internal]
+    read_only: true
+    tmpfs: [/tmp]
+  frontend:
+    image: nginx:1.27-alpine
+    restart: unless-stopped
+    ports: ["127.0.0.1:${FRONTEND_PORT:-8097}:80"]
+    volumes:
+      - ./frontend:/usr/share/nginx/html:ro
+      - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
+    depends_on:
+      api: {condition: service_healthy}
+    networks: [internal]
+    read_only: true
+    tmpfs: [/var/cache/nginx, /var/run, /tmp]
+    security_opt: ["no-new-privileges:true"]
+networks:
+  internal: {}
+volumes:
+  dbdata: {}

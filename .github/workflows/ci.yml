@@ -1,0 +1,23 @@
+name: Paper-only CI
+on:
+  push:
+  pull_request:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Pure Python safety and strategy tests
+        run: python -m unittest discover -s tests -q
+      - name: Compose configuration (no service startup)
+        run: |
+          cp .env.example .env
+          docker compose config --quiet
+      - name: Secret-free public repository review
+        run: |
+          test ! -e .env.local
+          test ! -e runtime/coinbot.sqlite3
+          ! grep -R -n -E 'sk-proj-[A-Za-z0-9]{20}|COINCHECK_API_SECRET=[A-Za-z0-9]{12}' app frontend docs --exclude-dir=__pycache__
