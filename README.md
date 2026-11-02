@@ -70,4 +70,4 @@ The Compose stack is **VPS-ready but not live-deployed**: choose a dedicated Lin
 - **No full production hardening yet**: no user management, public HTTPS, migrations, rate limit on admin endpoints, broker reconciliation, tax reporting, or actual fail-safe orders. No financial performance promise.
 - **No API key in repo**. OpenAI key creation, configuring `NEWS_MODE=live` and incurring billable calls are separate Owner-approved setup tasks.
 
-See `docs/ACCEPTANCE.md`, `docs/ARCHITECTURE.md`, `docs/SECURITY.md` for readiness gates.
+See `docs/ACCEPTANCE.md`, `docs/ARCHITECTURE.md`, `docs/SECURITY.md`, and `docs/LOCAL_DOCKER_E2E_20261103.md` for readiness gates and verified local Docker smoke results.
