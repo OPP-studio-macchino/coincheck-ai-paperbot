@@ -1,23 +1,55 @@
-name: Paper-only CI
+name: Paper-only security CI
 on:
   push:
+    branches: [main, 'security/**']
   pull_request:
+permissions:
+  contents: read
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
-  test:
-    runs-on: ubuntu-latest
+  security:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - name: Checkout (read-only token, complete history)
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4 verified 2026-11-03
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - name: Python 3.12
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5 verified 2026-11-03
         with:
           python-version: '3.12'
-      - name: Pure Python safety and strategy tests
+      - name: Python fail-closed strategy / policy tests
         run: python -m unittest discover -s tests -q
-      - name: Compose configuration (no service startup)
+      - name: Secret inspection, including reachable history (redacted output)
+        run: python scripts/scan_secrets.py --history
+      - name: Generate disposable CI-only config and parse Compose
         run: |
-          cp .env.example .env
-          docker compose config --quiet
-      - name: Secret-free public repository review
+          python scripts/bootstrap_env.py
+          docker compose --project-name coincheck-ai-security-ci config --quiet
+          python - <<'PY'
+          import json, subprocess
+          raw=subprocess.check_output(['docker','compose','--project-name','coincheck-ai-security-ci','config','--format','json'])
+          config=json.loads(raw)
+          assert config['networks']['db_private']['internal'] is True
+          assert config['networks']['front_edge']['internal'] is True
+          assert not config['services']['db'].get('ports')
+          assert not config['services']['api'].get('ports')
+          assert config['services']['frontend']['ports'][0]['host_ip']=='127.0.0.1'
+          for svc in ['db','market','news','api','frontend']:
+              assert config['services'][svc]['security_opt']==['no-new-privileges:true']
+          assert config['services']['market']['environment']['DRY_RUN']=='true'
+          assert config['services']['market']['environment']['LIVE_TRADING_ENABLED']=='false'
+          assert config['services']['news']['environment']['NEWS_MODE']=='mock'
+          print('COMPOSE_SECURITY_POLICY_PASS')
+          PY
+      - name: Audit pinned Python dependencies (public advisory service only)
         run: |
-          test ! -e .env.local
-          test ! -e runtime/coinbot.sqlite3
-          ! grep -R -n -E 'sk-proj-[A-Za-z0-9]{20}|COINCHECK_API_SECRET=[A-Za-z0-9]{12}' app frontend docs --exclude-dir=__pycache__
+          python -m pip install --disable-pip-version-check pip-audit==2.9.0
+          pip-audit --no-deps --disable-pip --requirement requirements.lock
+      - name: Build immutable-base paper-only image (no secrets)
+        run: docker build --build-arg APP_GIT_SHA="${{ github.sha }}" -t paperbot-security-ci:${{ github.sha }} .
