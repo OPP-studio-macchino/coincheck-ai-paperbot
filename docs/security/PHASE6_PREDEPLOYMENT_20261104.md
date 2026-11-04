@@ -101,3 +101,28 @@ SSH-tunnel, monitoring, and incident procedures are maintained in
 **PHASE 6: BLOCKED.** CryptoFX DRY_RUN deployment is not authorized or ready
 while independent DR storage and privileged VPS read-only acceptance remain
 incomplete.
+
+## Continuation evidence — 2026-11-04
+
+The interrupted Drive upload was not retried. No independently approved
+offline medium or vault was identified in this continuation, so no recovery
+identity copy, offsite archive upload, download checksum, or further restore
+drill was performed.
+
+CryptoFX read-only capability was narrowed without changing it: `bot-admin` is
+in the `sudo` group, but non-interactive sudo is unavailable; the Docker socket
+is mode `660 root:docker`, and the account is not in the `docker` group. UFW
+and sshd binaries are present. This confirms that one owner-authenticated sudo
+session can perform the remaining read-only UFW/sshd/Docker checks without
+adding NOPASSWD or changing group membership. No password was requested,
+captured, or supplied to an automation.
+
+PR #1 is open at `b8a74c7`, both required Security CI runs pass, and a
+non-sensitive [review packet](https://github.com/OPP-studio-macchino/coincheck-ai-paperbot/pull/1#issuecomment-6624736218)
+was posted. It has zero reviews, no requested reviewers, and the repository's
+only collaborator visible to the connected account is the PR author/admin.
+There is therefore no eligible independent reviewer to request from this
+account. An owner must add or nominate a qualified, separate reviewer; the
+author and automated agents must not approve the PR.
+
+The remaining gates and **PHASE 6: BLOCKED** disposition are unchanged.
