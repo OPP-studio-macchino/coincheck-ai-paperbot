@@ -37,20 +37,56 @@ including its API and DB health checks.
 
 ## TASK 2 — encrypted backup restore
 
-Result: **BLOCKED**.
+Result: **PASS for the newly generated backup and restore drill; the two legacy
+archives remain unavailable for restore.**
 
 Both existing age archives passed SHA-256 verification:
 
 - `paperbot_20261103T021718Z.dump.age`
 - `paperbot_20261103T023414Z.dump.age`
 
-The restore script correctly requires an identity outside the project tree. No
-approved, separate offline identity was available for this acceptance run. An
-identity file found inside the project tree was deliberately not used or moved:
-doing so would violate the script's protection and the acceptance safety rules.
-No archive was decrypted, no `paperbot_restore_*` database was created, and no
-plaintext dump was written. Therefore no restore duration, clone-table counts,
-or clone portfolio reconciliation can be claimed.
+The two legacy archives remain checksum-valid, but their corresponding approved
+project-external identity was not available. The legacy identity found inside
+the project tree was deliberately neither used nor moved. Therefore neither
+legacy archive has a successful restore claim.
+
+A new age identity was generated outside the project and outside Docker at an
+owner-approved, mode-700 user configuration location; the identity file is
+mode 600. Its public recipient alone was installed on the isolated backup
+generator (also mode 600). The recipient's non-secret SHA-256 identifier is
+`a2824a99631ef5b04e81d98f429b884048243ca0fac0574d81fc3ad3eae0ad1e`.
+No identity value was printed, committed, copied into the image, or stored in
+the project.
+
+The new archive `paperbot_20261104T053119Z.dump.age` was streamed from the
+isolated DB, is 630,315 bytes, took 1 second to create, and passed its SHA-256
+check. It was restored via `scripts/restore_clone.sh` in 2 seconds to the new,
+previously absent `paperbot_restore_phase5_20261104` database, with no plaintext
+dump written. The restore script reported 2 portfolios.
+
+At verification, portfolio balances, BTC quantities, entry cost, realized P&L,
+and bracket values matched exactly: both `baseline` and `news_gate` had
+100,000 JPY cash, zero BTC, zero entry cost, zero realized P&L, and null
+entry/SL/TP values. Snapshot counts also matched for portfolios (2), candles
+(22), decisions (2), fills (0), news assessments (54), admin audits (18), and
+schema migrations (1). The clone contained 38,494 market ticks; the live
+isolated source had increased to 38,551 by comparison time because its public
+collector continued running after the dump. This is expected snapshot drift,
+not a restore discrepancy.
+
+The restored clone passed the explicit migration and `app.security_e2e` suite:
+role denials, audited pause, no replay after resume, stop-ack race handling,
+portfolio preservation, permission rollback/re-apply, and clone E2E all
+passed. `pg_amcheck` was not claimed because the installed PostgreSQL instance
+does not have the `amcheck` extension; it was not installed on the running DB.
+
+Recovery procedure: the owner supplies only the external identity *path* as
+`BACKUP_IDENTITY_FILE` to `scripts/restore_clone.sh`; the script checks the
+archive checksum before streaming age decryption to a new
+`paperbot_restore_*` database. A second, independent disaster-recovery copy of
+the identity has not been created by this task and remains an operational
+follow-up. The project-resident legacy identity should be retired separately
+under an approved key-rotation process.
 
 ## TASK 3 — HTTP pause persistence across API restart
 
@@ -73,7 +109,7 @@ HTTP 200.
 
 ## TASK 4 — regression checks
 
-Result: **BLOCKED** (because TASK 2 has not completed; no false overall pass).
+Result: **PASS for the isolated regression suite**.
 
 Completed checks:
 
@@ -85,12 +121,13 @@ Completed checks:
 | API authentication | unauthenticated 401; view-token control POST 403; admin status GET 200 |
 | DB role boundary, read-only inspection | `paper_control`, `paper_market`, `paper_news`, `paper_query` exist; direct portfolio UPDATE is false for query/control/market |
 | Runtime safeguards | HTTP runtime SHA above; `DRY_RUN_ONLY`; no private Coincheck endpoint or paid OpenAI call executed |
-| Current isolated DB observations | 2 portfolios, 33,509 market ticks, 2 decisions, 0 fills, 18 audit rows, final pause state `false` |
+| Current isolated DB observations | 2 portfolios, 2 decisions, 0 fills, final pause state `false`; live market-tick count is intentionally time-varying |
+| Restored-clone E2E | role boundary, pause race, no replay, portfolio preservation, permission rollback/re-apply — PASS |
+| Disposable DB fixture | 13,000 JPY inclusive cap, unknown-news block, ATR exit while paused, RSI replay prevention, trade-ID dedupe, concurrent single BUY — PASS |
 
-The mutation-heavy clone fixture tests were not rerun against the already-used
-isolated database because they intentionally alter paper-fixture data. Their
-successful execution requires a disposable clone, which is part of the blocked
-encrypted restore drill.
+The mutation-heavy fixture was run only against a newly created
+`paperbot_test_*` disposable DB, never against the normal Bot, the isolated
+runtime DB, or the restored acceptance clone.
 
 ## Normal Bot protection
 
@@ -106,6 +143,9 @@ does not contain tokens, credentials, private keys, or backup plaintext.
 GitHub update result: the commit containing this document records the local
 acceptance evidence; push and CI status are reported in the operator handoff.
 
-Residual material risk: encrypted backup restoration has not been proven with
-an approved offline identity in a new clone database. Consequently, **PHASE 5
-is BLOCKED** and DigitalOcean deployment preparation must not proceed yet.
+The new approved recovery chain is proven, but the two legacy archives have no
+currently approved restore identity. Consequently, **PHASE 5 is PASS for the
+new recovery chain, with legacy-archive recovery BLOCKED**. This task does not
+authorize a DigitalOcean deployment; deployment should remain on hold until
+the legacy-archive retention/disposition and an independent key-recovery copy
+are formally resolved.
