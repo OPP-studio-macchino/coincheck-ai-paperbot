@@ -106,10 +106,10 @@ class NewsTests(unittest.TestCase):
                        'sources':[{'title':'Rumor','url':'http://example.com'}]},'mock',{})
         self.assertEqual(assessment.state,'unknown')
 
-    def test_official_source_clear_only_when_valid(self):
+    def test_official_domain_alone_cannot_clear(self):
         assessment=validate_news({'state':'clear','summary':'Sample','valid_for_minutes':30,
                        'sources':[{'title':'SEC','url':'https://www.sec.gov/example'}]},'test',{})
-        self.assertEqual(assessment.state,'clear')
+        self.assertEqual(assessment.state,'unknown')
 
     def test_expiry_rejected(self):
         a=validate_news({'state':'clear','summary':'Sample','valid_for_minutes':500,

@@ -1,85 +1,167 @@
-name: coincheck-ai-paperbot
+name: ${COMPOSE_PROJECT_NAME:-coincheck-ai-security}
+
+x-app-common: &app_common
+  build:
+    context: .
+    args:
+      APP_GIT_SHA: ${APP_GIT_SHA:-unknown}
+  restart: unless-stopped
+  read_only: true
+  tmpfs: [/tmp]
+  security_opt: ["no-new-privileges:true"]
+  cap_drop: ["ALL"]
+  pids_limit: 96
+  mem_limit: 320m
+  cpus: 0.75
+  environment: &safe_flags
+    POSTGRES_DB: ${POSTGRES_DB:-paperbot}
+    DB_HOST: db
+    DRY_RUN: "true"
+    LIVE_TRADING_ENABLED: "false"
+    NEWS_MODE: "mock"
+    APP_GIT_SHA: ${APP_GIT_SHA:-unknown}
+
 services:
   db:
-    image: postgres:16-alpine
+    image: postgres:16.15-alpine@sha256:0cefaabd882e42bcb2a2f3dc56d3ce4770560ba62fd7f197f1a2e008fd5731ab
     restart: unless-stopped
     environment:
-      POSTGRES_DB: ${POSTGRES_DB:?required}
-      POSTGRES_USER: ${POSTGRES_USER:?required}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?required}
+      POSTGRES_DB: ${POSTGRES_DB:-paperbot}
+      POSTGRES_USER: ${POSTGRES_USER:-paper_admin}
+      POSTGRES_PASSWORD_FILE: /run/secrets/db_admin_password
+    secrets: [db_admin_password]
     volumes:
       - dbdata:/var/lib/postgresql/data
       - ./schema.sql:/docker-entrypoint-initdb.d/001-schema.sql:ro
+    read_only: true
+    tmpfs: [/tmp, /var/run/postgresql]
+    security_opt: ["no-new-privileges:true"]
+    cap_drop: ["ALL"]
+    cap_add: [CHOWN, DAC_OVERRIDE, SETUID, SETGID]
+    pids_limit: 128
+    mem_limit: 900m
+    cpus: 0.75
+    networks: [db_private]
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
       interval: 10s
       timeout: 5s
-      retries: 10
-    networks: [internal]
-  api:
-    build: .
-    command: ["uvicorn", "app.api:app", "--host", "0.0.0.0", "--port", "8000"]
-    restart: unless-stopped
+      retries: 12
+
+  migration:
+    <<: *app_common
+    profiles: [migration]
+    restart: "no"
+    command: ["python","-m","app.migrate","upgrade"]
     environment:
-      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
-      DASHBOARD_TOKEN: ${DASHBOARD_TOKEN:?required}
-      DRY_RUN: "true"
-      LIVE_TRADING_ENABLED: "false"
+      <<: *safe_flags
+      POSTGRES_USER: ${POSTGRES_USER:-paper_admin}
+      DB_ADMIN_PASSWORD_FILE: /run/secrets/db_admin_password
+      DB_MARKET_PASSWORD_FILE: /run/secrets/db_market_password
+      DB_NEWS_PASSWORD_FILE: /run/secrets/db_news_password
+      DB_QUERY_PASSWORD_FILE: /run/secrets/db_query_password
+      DB_CONTROL_PASSWORD_FILE: /run/secrets/db_control_password
+    secrets:
+      - db_admin_password
+      - db_market_password
+      - db_news_password
+      - db_query_password
+      - db_control_password
     depends_on:
       db: {condition: service_healthy}
-    networks: [internal]
-    read_only: true
-    tmpfs: [/tmp]
+    networks: [db_private]
+    mem_limit: 320m
+    cpus: 0.5
+
+  market:
+    <<: *app_common
+    command: ["python","-m","app.market_worker"]
+    environment:
+      <<: *safe_flags
+      DB_MARKET_PASSWORD_FILE: /run/secrets/db_market_password
+      BUY_BUDGET_JPY: ${BUY_BUDGET_JPY:-50000}
+      INITIAL_CASH_JPY: ${INITIAL_CASH_JPY:-100000}
+      PAPER_FEE_BPS: ${PAPER_FEE_BPS:-0}
+    secrets: [db_market_password]
+    depends_on:
+      db: {condition: service_healthy}
+    networks: [db_private, outbound]
+    mem_limit: 512m
+
+  news:
+    <<: *app_common
+    command: ["python","-m","app.news_worker"]
+    environment:
+      <<: *safe_flags
+      DB_NEWS_PASSWORD_FILE: /run/secrets/db_news_password
+      NEWS_INTERVAL_SECONDS: "1800"
+    secrets: [db_news_password]
+    depends_on:
+      db: {condition: service_healthy}
+    networks: [db_private, outbound]
+    mem_limit: 256m
+
+  api:
+    <<: *app_common
+    command: ["uvicorn","app.api:app","--host","0.0.0.0","--port","8000",
+              "--no-proxy-headers","--limit-concurrency","64",
+              "--limit-max-requests","10000"]
+    environment:
+      <<: *safe_flags
+      DB_QUERY_PASSWORD_FILE: /run/secrets/db_query_password
+      DB_CONTROL_PASSWORD_FILE: /run/secrets/db_control_password
+      VIEW_TOKEN_FILE: /run/secrets/view_token
+      ADMIN_TOKEN_FILE: /run/secrets/admin_token
+      ALLOWED_HOSTS: "127.0.0.1,localhost"
+    secrets: [db_query_password,db_control_password,view_token,admin_token]
+    depends_on:
+      db: {condition: service_healthy}
+    networks: [db_private,front_edge]
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/healthz',timeout=3)"]
+      test: ["CMD","python","-c",
+             "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/healthz',timeout=2)"]
       interval: 15s
       timeout: 5s
-      retries: 5
-  market:
-    build: .
-    command: ["python", "-m", "app.market_worker"]
-    restart: unless-stopped
-    environment:
-      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
-      DRY_RUN: "true"
-      LIVE_TRADING_ENABLED: "false"
-      BUY_BUDGET_JPY: "50000"
-      INITIAL_CASH_JPY: "100000"
-    depends_on:
-      db: {condition: service_healthy}
-    networks: [internal]
-    read_only: true
-    tmpfs: [/tmp]
-  news:
-    build: .
-    command: ["python", "-m", "app.news_worker"]
-    restart: unless-stopped
-    environment:
-      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
-      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
-      OPENAI_MODEL: ${OPENAI_MODEL:-gpt-5-mini}
-      NEWS_MODE: ${NEWS_MODE:-mock}
-      DRY_RUN: "true"
-      LIVE_TRADING_ENABLED: "false"
-    depends_on:
-      db: {condition: service_healthy}
-    networks: [internal]
-    read_only: true
-    tmpfs: [/tmp]
+      retries: 6
+
   frontend:
-    image: nginx:1.27-alpine
+    image: nginxinc/nginx-unprivileged:1.30-alpine@sha256:f5116ed4606f3eb015dd4a8e28cb9b351476dc0ad4bc6e9f93b19cec130cdf03
     restart: unless-stopped
-    ports: ["127.0.0.1:${FRONTEND_PORT:-8097}:80"]
+    ports:
+      - "127.0.0.1:${FRONTEND_PORT:-18098}:8080"
     volumes:
       - ./frontend:/usr/share/nginx/html:ro
       - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
     depends_on:
       api: {condition: service_healthy}
-    networks: [internal]
+    # Dedicated non-internal transport needed for Docker's loopback port publishing.
+    # Only this frontend joins it; DB and API have no host-published ports.
+    networks: [front_edge, loopback_transport]
     read_only: true
-    tmpfs: [/var/cache/nginx, /var/run, /tmp]
+    tmpfs: [/tmp, /var/cache/nginx, /var/run]
+    user: "101:101"
     security_opt: ["no-new-privileges:true"]
+    cap_drop: ["ALL"]
+    pids_limit: 64
+    mem_limit: 128m
+    cpus: 0.4
+
 networks:
-  internal: {}
+  db_private:
+    internal: true
+  front_edge:
+    internal: true
+  outbound: {}
+  loopback_transport: {}
+
 volumes:
   dbdata: {}
+
+secrets:
+  db_admin_password: {file: ./secrets/db_admin_password}
+  db_market_password: {file: ./secrets/db_market_password}
+  db_news_password: {file: ./secrets/db_news_password}
+  db_query_password: {file: ./secrets/db_query_password}
+  db_control_password: {file: ./secrets/db_control_password}
+  view_token: {file: ./secrets/view_token}
+  admin_token: {file: ./secrets/admin_token}
