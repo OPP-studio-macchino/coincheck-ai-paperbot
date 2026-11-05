@@ -1,7 +1,7 @@
 name: Paper-only security CI
 on:
   push:
-    branches: [main, 'security/**']
+    branches: [main, 'security/**', 'feat/ai-self-improvement-*']
   pull_request:
 permissions:
   contents: read
@@ -53,3 +53,13 @@ jobs:
           pip-audit --no-deps --disable-pip --requirement requirements.lock
       - name: Build immutable-base paper-only image (no secrets)
         run: docker build --build-arg APP_GIT_SHA="${{ github.sha }}" -t paperbot-security-ci:${{ github.sha }} .
+
+      - name: Build offline research image
+        run: docker build -f Dockerfile.ai-lab --build-arg APP_GIT_SHA="${{ github.sha }}" -t coincheck-ai-lab-ci .
+      - name: Exercise bounded research with no network and no credentials
+        run: |
+          docker run --rm --network none --read-only --cap-drop ALL \
+            --security-opt no-new-privileges --pids-limit 32 --memory 512m --cpus 1 \
+            --tmpfs /var/lib/ai-lab:rw,nosuid,nodev,noexec,size=64m,uid=10001,gid=10001 \
+            coincheck-ai-lab-ci demo --workspace /var/lib/ai-lab/research \
+              --run-id ci-offline --max-trials 3 --buy-budget-jpy 13000

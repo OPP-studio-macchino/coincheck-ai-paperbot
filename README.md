@@ -82,3 +82,22 @@ No Git or image changes can be applied through the frontend. A release must use 
 Details: [DigitalOcean/SSH/Firewall](docs/security/DIGITALOCEAN_SSH_VPS_RUNBOOK.md), [Configuration and release/rollback](docs/security/CONFIG_RELEASE_ROLLBACK.md), [Encrypted backup/restore](docs/security/BACKUP_RESTORE.md), [Monitoring and incidents](docs/security/MONITORING_INCIDENT.md), [Security acceptance](docs/security/ACCEPTANCE_20261103.md), and [Final acceptance addendum](docs/security/FINAL_ACCEPTANCE_ADDENDUM_20261103.md).
 
 **Not yet verified**: any DigitalOcean deployment or firewall; SSH tunnel across a VPS; automated backup retention/offsite copy; full encrypted-archive restore using an offline private key; real Coincheck order execution (intentionally forbidden). No profit prediction is warranted.
+
+
+## AI自己改善エンジン（独立したオフライン研究MVP）
+
+追加機能の入口は [AI_SELF_IMPROVEMENT.md](AI_SELF_IMPROVEMENT.md)、仕様の正本は
+[AI自己改善エンジン正本](docs/ai-self-improvement/SOURCE_OF_TRUTH.md) です。
+計画書・技術書・実行手順・検収書を同じディレクトリに置きます。
+
+`ai_lab/` は研究用の候補生成・評価・記録だけを行います。既存の `app/`、
+ポジション、PostgreSQL、稼働用Composeを変更しません。
+MVPは固定応答と凍結CSVで動き、OpenAI課金・実注文は発生しません。
+
+```bash
+python3 -m ai_lab demo --workspace runtime/ai_lab --run-id first-demo --max-trials 6
+# 結果：runtime/ai_lab/first-demo.html
+```
+
+Docker版は独立した `compose.ai-lab.yaml` を使います。稼働中BotのComposeと
+合成せず、[運用手順](docs/ai-self-improvement/OPERATIONS.md) に従ってください。
