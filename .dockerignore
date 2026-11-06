@@ -12,6 +12,7 @@ docs/*
 !docs/ai-self-improvement/
 docs/ai-self-improvement/*
 !docs/ai-self-improvement/SOURCE_OF_TRUTH.md
+# Phase 2 receives its key only through a Compose secret mount.
 data/
 results/
 tests/

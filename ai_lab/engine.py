@@ -18,6 +18,8 @@ from .dataset import Dataset, chronological_split, validate_dataset
 from .evaluator import evaluate
 from .ledger import Ledger
 from .provider import FixtureProvider
+from .artifact_provider import ArtifactProvider
+from .proposal_context import make_envelope
 from .screening import screen
 
 
@@ -41,6 +43,24 @@ def training_summary(dataset: Dataset, start: int, end: int) -> dict:
             "end_utc":(dataset.candles[end-1].start+timedelta(minutes=5)).isoformat(),
             "rows":end-start, "return_pct":round(change,6),
             "daily_volatility_pct":round(volatility,6), "regime":regime}
+
+
+def _initial_context(dataset: Dataset, splits: dict) -> dict:
+    return {"training_summary": training_summary(dataset, *splits["train"]),
+            "development_feedback": [], "parent_candidate": BASELINE.to_dict(),
+            "trial_index": 0, "policy_version": POLICY["policy_version"]}
+
+
+def prepare_proposal(dataset: Dataset, *, buy_budget_jpy: int = 50000) -> dict:
+    """Export only train statistics, plus local bindings for one offline trial."""
+    if type(buy_budget_jpy) is not int or not 0 < buy_budget_jpy <= POLICY["buy_budget_ceiling_jpy"]:
+        raise LabError("BUY_BUDGET_INVALID")
+    validate_dataset(dataset)
+    splits = chronological_split(dataset, POLICY["warmup_days"])
+    return make_envelope(_initial_context(dataset, splits), dataset_hash=dataset.sha256,
+                         dataset_metadata=dataset.metadata(), splits=splits,
+                         buy_budget_jpy=buy_budget_jpy,
+                         source_hash=source_identity()["source_hash"])
 
 
 def _subset(dataset: Dataset, end: int) -> Dataset:
@@ -91,22 +111,40 @@ def run_research(dataset: Dataset, ledger: Ledger, run_id: str, *,
     validate_dataset(dataset)
     splits=chronological_split(dataset,POLICY["warmup_days"])
     provider=FixtureProvider() if provider is None else provider
-    if type(provider) is not FixtureProvider:
+    if type(provider) not in (FixtureProvider, ArtifactProvider):
         raise LabError("LIVE_PROVIDER_DISABLED")
+    identity = source_identity()
+    artifact_mode = type(provider) is ArtifactProvider
+    if artifact_mode:
+        if max_trials != 1 or fixture_seed is not None:
+            raise LabError("PHASE2_SINGLE_CANDIDATE_REQUIRED")
+        # Never trust the producer's claim about data, settings or training input.
+        expected = make_envelope(_initial_context(dataset, splits), dataset_hash=dataset.sha256,
+                                 dataset_metadata=dataset.metadata(), splits=splits,
+                                 buy_budget_jpy=buy_budget_jpy,
+                                 source_hash=identity["source_hash"])
+        provider.verify_envelope(expected)
+    provider_metadata = provider.metadata()
+    generation_mode = provider_metadata.get("generation_mode", "fixture")
     manifest={"spec_version":POLICY["canonical_spec_version"],
               "policy_version":POLICY["policy_version"],"policy_hash":POLICY_HASH,
               "dataset_hash":dataset.sha256,"provenance":dataset.metadata(),
               "splits":{key:list(value) for key,value in splits.items()},
-              "source":source_identity(),"baseline_hash":BASELINE.strategy_hash,
+              "source":identity,"baseline_hash":BASELINE.strategy_hash,
               "max_trials":max_trials,"buy_budget_jpy":buy_budget_jpy,
               "initial_cash_jpy":POLICY["initial_cash_jpy"],"execution":POLICY["execution"],
               "screening":POLICY["screening"],"provider":type(provider).__name__,
-              "provider_contract":provider.metadata(),
-              "provider_mode":"offline_fixture", "model_id":"fixture-not-an-openai-model",
+              "provider_contract":provider_metadata,
+              "provider_mode":"offline_artifact" if artifact_mode else "offline_fixture",
+              "generation_mode":generation_mode,"model_id":provider_metadata["model_id"],
               "fixture_seed":fixture_seed,
-              "actual_openai_calls":0,"deployment_enabled":False}
+              "actual_openai_calls":0,"actual_openai_calls_scope":"offline_evaluator_only",
+              "upstream_openai_calls_reported":1 if generation_mode=="openai_responses" else 0,
+              "producer_authenticated":False,"deployment_enabled":False}
     with ledger.single_writer():
         previous=ledger.begin_run(run_id,manifest)
+        if artifact_mode:
+            provider.verify_saved_trials(ledger.trials(run_id), complete=previous["status"] == "COMPLETED")
         if previous["status"] == "COMPLETED":
             return ledger.snapshot(run_id)
         with _deadline() as check:
@@ -130,7 +168,10 @@ def _run(dataset,ledger,run_id,manifest,splits,provider,progress,check):
     feedback=[]
     parent=BASELINE
     parent_profit=base["net_profit_jpy"]
-    old={x["trial_index"]:x for x in ledger.trials(run_id)}
+    saved_trials = ledger.trials(run_id)
+    if type(provider) is ArtifactProvider:
+        provider.verify_saved_trials(saved_trials)
+    old={x["trial_index"]:x for x in saved_trials}
     for index in range(manifest["max_trials"]):
         check()
         row=old.get(index)
@@ -200,7 +241,10 @@ def _run(dataset,ledger,run_id,manifest,splits,provider,progress,check):
             shortlist.append((result["development"]["net_profit_jpy"],row["candidate_hash"],row))
     final_result={"outcome":"NO_IMPROVEMENT","reasons":[],"baseline_development":base,
                   "baseline_stress":base_stress,"final_test":None,
-                  "selected_candidate":None,"actual_openai_calls":0,"deployment_enabled":False}
+                  "selected_candidate":None,"actual_openai_calls":0,
+                  "actual_openai_calls_scope":"offline_evaluator_only",
+                  "upstream_openai_calls_reported":manifest["upstream_openai_calls_reported"],
+                  "generation_mode":manifest["generation_mode"],"deployment_enabled":False}
     if not shortlist:
         codes=set()
         for row in ledger.trials(run_id):
@@ -234,6 +278,8 @@ def _run(dataset,ledger,run_id,manifest,splits,provider,progress,check):
             final_result["final_test"]=saved
             final_result["reasons"]=saved["gate_reasons"]
             final_result["outcome"]=("DEMO_ONLY" if dataset.source=="synthetic" else "REVIEW_REQUIRED") if saved["passed"] else "HOLDOUT_FAILED"
+    if type(provider) is ArtifactProvider:
+        provider.verify_saved_trials(ledger.trials(run_id), complete=True)
     ledger.finish_run(run_id,final_result)
     return ledger.snapshot(run_id)
 

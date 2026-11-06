@@ -59,6 +59,15 @@ def write_report(snapshot: dict, destination: Path) -> None:
     provenance = manifest.get("provenance", {})
     is_demo = provenance.get("source") == "synthetic"
     banner = "合成価格による機能検証。実相場の運用成績ではありません。" if is_demo else "利用者提供の過去データによる研究。取引所・銘柄・収集時刻の真正性、実運用の利益は未検証です。"
+    generation_mode = manifest.get("generation_mode")
+    if generation_mode == "openai_responses":
+        generation_text = ("生成方式：OpenAI応答の保存候補。評価処理からのAPI呼出しは0回。"
+                           "生成元・usage・費用は保存記録の申告値で、成果物hashは署名ではありません。")
+    elif generation_mode == "fixture" or manifest.get("provider_mode") == "offline_fixture":
+        generation_text = ("生成方式：固定応答（OpenAIへの送信・課金なし）。"
+                           "生成記録にusage・費用がある場合は模擬値です。")
+    else:
+        generation_text = "生成方式：この記録では未確認。評価処理に外部APIを呼び出す機能はありません。"
     outcome = result.get("outcome", "RUNNING")
     buy = manifest.get("buy_budget_jpy", 0)
     initial = manifest.get("initial_cash_jpy")
@@ -102,7 +111,7 @@ footer{{margin-top:24px;font-size:12px;color:var(--muted);border-top:1px solid v
 </style></head><body><main>
 <header><div><div class="eyebrow">O.P.P STUDIO / COINCHECK BOT</div><h1>AI自己改善エンジン · 研究室</h1>
 <p class="muted">候補を作り、同じ条件で比較し、採否の根拠を残す。</p></div><span class="badge">研究専用 · 実口座未接続</span></header>
-<div class="notice">{banner}　生成方式：固定応答（OpenAIへの送信・課金なし）</div>
+<div class="notice">{banner}　{esc(generation_text)}</div>
 <div class="metrics"><section class="card"><div class="label">候補の試行数 / 上限</div><div class="value">{len(snapshot['trials'])} / {esc(manifest.get('max_trials','—'))}</div><small>失敗・不正・重複も消費に含めます</small></section>
 <section class="card"><div class="label">1回の仮想購入上限</div><div class="value">¥{buy:,.0f}</div><small>手数料込み · 初期仮想資金 {initial_text}</small></section>
 <section class="card"><div class="label">固定2時間足の開発区間損益</div><div class="value">{base_text}</div><small>費用仮定込み・評価用の区間末決済を含む</small></section>

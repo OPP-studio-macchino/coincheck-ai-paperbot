@@ -106,6 +106,27 @@ def proposal_schema() -> dict:
             "required": list(props), "additionalProperties": False}
 
 
+def responses_proposal_schema() -> dict:
+    """The deliberately small Structured Outputs schema sent to OpenAI.
+
+    The Responses API accepts a useful subset of JSON Schema.  Detailed bounds
+    remain enforced by :func:`validate_candidate`; keeping those constraints
+    out of this wire schema avoids turning an API compatibility change into a
+    fail-open validation change (or an avoidable HTTP 400).
+    """
+    local = proposal_schema()
+    properties = {}
+    for key, spec in local["properties"].items():
+        wire = {"type": spec["type"]}
+        if "enum" in spec:
+            wire["enum"] = spec["enum"]
+        if key == "entry_filters":
+            wire["items"] = {"type": "string", "enum": POLICY["allowed_filters"]}
+        properties[key] = wire
+    return {"type": "object", "properties": properties,
+            "required": list(properties), "additionalProperties": False}
+
+
 def validate_candidate(raw: dict | Candidate) -> Candidate:
     if isinstance(raw, Candidate):
         raw = raw.to_dict()

@@ -1,43 +1,46 @@
 # AI自己改善エンジン 技術書
 
-対象版：`ai-self-improvement-v0.1`。権限と採否の正本は [SOURCE_OF_TRUTH.md](SOURCE_OF_TRUTH.md) です。
+対象版：`ai-self-improvement-v0.2`（2026-11-06 JST）。権限と採否の正本は [SOURCE_OF_TRUTH.md](SOURCE_OF_TRUTH.md) です。
 本書はその実装方法を説明します。予定の機能と実装済み機能を混同しないでください。
 
 ## 1. 構成と権限
 
+本版は二つの生成経路を持ちます。既存fixture探索はオフラインで最大8試行、Phase 2は要求書から1候補だけを生成し、別プロセスで評価します。Phase 2の評価結果から次の実API要求を自動作成するループはありません。
+
 ```mermaid
 flowchart TD
-    D[凍結した5分OHLCV] --> V[品質検査と期間分割]
-    V --> T[学習区間の統計]
-    T --> G[候補生成器]
-    G --> C[JSON契約検査]
-    C --> E[開発区間の評価]
-    E --> G
-    E --> S[固定基準で1件選抜]
-    S --> H[一度だけの最終評価]
-    H --> R[不採用 または 審査待ち]
-    E --> L[研究専用台帳]
-    R --> L
-    L --> U[ローカルHTMLレポート]
+    D[凍結した5分OHLCV] --> P[要求書作成]
+    P --> G[生成専用プロセス]
+    B[生成用費用台帳] <--> G
+    G --> F[検証済み候補ファイル]
+    F --> V[要求書とデータを再照合]
+    D --> V
+    V --> E[固定基準のオフライン評価]
+    E --> H[条件を満たす場合だけ最終評価]
+    E --> L[研究用台帳]
+    H --> L
+    L --> R[静的レポートと人の審査]
 ```
 
-この構成に、既存Botへの設定書込み・発注・デプロイの矢印はありません。
-研究用プロセスは既存 `app/strategy.py` の純粋な計算関数を参照しますが、market worker、news worker、DB、取引所クライアントは起動しません。
-候補は実行可能コードではなく、有限の条件名と数値です。
+既存Botへの設定書込み、注文、残高更新、デプロイの接続は設けません。評価器は既存`app/strategy.py`の純粋な計算関数を参照しますが、worker、DB、取引所クライアントを起動しません。生成用イメージにはBot・評価器・PostgreSQL driverを含めず、専用のstateと成果物へだけ書き込みます。
 
 | モジュール | 役割 |
 |---|---|
-| `policy.json` / `contracts.py` | 数値ポリシー、候補Schema、型・範囲・起動時の拒否条件 |
-| `dataset.py` | CSV検査、期間分割、合成入力 |
-| `provider.py` | 固定応答、Responses API契約の組立て・応答検証 |
-| `evaluator.py` | 5分足の集約、指標・時系列シグナル・費用込みシミュレーション |
-| `screening.py` | AIから独立した採否基準 |
-| `ledger.py` | 試行予約、候補・結果、最終期間の使用記録、監査 |
-| `engine.py` | 有限の候補生成・評価ループと選抜 |
-| `report.py` | 台帳からHTMLを生成。スクリプトなし |
-| `__main__.py` | オフラインCLI。実providerは選べない |
+| `policy.json` / `contracts.py` | 研究数値、候補Schema、型・範囲・環境の拒否条件 |
+| `dataset.py` | 凍結CSV検査、時間順分割、合成入力 |
+| `provider.py` | fixture、Responses要求・応答の基本契約 |
+| `proposal_context.py` | 要求書の型・束縛、固定wire requestの構築 |
+| `phase2_policy.py` | 固定model・料金版・予約額・usage検証 |
+| `phase2_budget.py` | 初期化済み専用台帳、原子予約、固定上限、状態遷移 |
+| `phase2_gateway.py` | 専用キー読込み、固定HTTPS宛先への1回送信 |
+| `phase2_artifacts.py` | 要求書・receipt・候補を結合した成果物の検証と保存 |
+| `phase2.py` | 明示的なinit / status / generate。既定fixture |
+| `artifact_provider.py` | 評価器側の読み取り専用成果物provider |
+| `evaluator.py` / `screening.py` | 指標・時系列約定・資金・費用の計算、固定採否基準 |
+| `ledger.py` / `engine.py` | 研究試行、manifest、holdout使用、監査、有限評価 |
+| `report.py` / `__main__.py` | 静的HTML、オフラインCLI、要求書作成・成果物評価 |
 
-Python標準ライブラリで動きます。MVPにOpenAI SDK、CCXT、PostgreSQL接続情報は不要です。
+研究機能はPython標準ライブラリで動きます。評価器へOpenAI SDK、APIキー、Coincheck資格情報、PostgreSQL接続情報を渡しません。通常Botの依存関係は別に管理します。
 
 ## 2. 候補JSONの意味
 
@@ -172,27 +175,48 @@ Profit factor = 通常決済の利益合計 / 通常決済の損失絶対値合�
 最大利益を見つけても、サンプルが不足すれば不採用です。
 「改善候補なし」はエラーではなく正常な結論です。
 
-## 7. Responses API契約とMVPの制限
+## 7. Phase 2のAPI契約と成果物
 
-Structured Outputsの `text.format` に候補Schemaと `strict=true` を指定するリクエストを構築します。
-モデルの識別子は将来の接続時に固定し、MVPの固定応答を実モデルの出力と表示しません。
-記事や外部データは信頼された開発者命令へ連結しません。
+### 7.1 要求書とAPI入力
 
-応答の検証は以下を含みます。
+`prepare-proposal`はCSVの品質検査と時間順分割を行い、固定baselineをparentとするtrial 0のcontextを作成します。要求書にはversion、context、binding、envelope hashを持たせます。bindingはデータhash、区間、購入予算、policy、正本を含むコード、baseline、prompt、schema、model、出力上限、wire requestのhashに結び付きます。
 
-- `status=completed` の確認。
-- refusal、不完全出力、出力項目の曖昧な多重化の拒否。
-- JSONサイズ、重複キー、NaN / Infinity、未知キー、型・範囲の検証。
-- 候補に売買数量・実行権限・採点結果が紛れ込んでいないかの確認。
+生成器は要求書を検証してwire requestを再構築します。modelへ渡すのは`validate_context()`を通ったcontextだけです。要求書のbindingをプロンプトへ丸ごと連結せず、CSV、最終区間の価格・成績、取引口座、秘密を送信しません。本版は開発フィードバックが空の最初の1候補に限定します。
 
-リクエスト構築・応答解析の契約試験は実施しますが、実モデルでの受理、課金、モデル品質はMVPの検証範囲外です。
-SDKのインストールやAPIキーの入力で、既定の研究CLIが勝手に本番接続へ切り替わる構成にはしません。
+Responses要求は固定model、`store:false`、`tools:[]`、`tool_choice:none`、`service_tier:default`、最大出力2,048tokenを指定します。`text.format`は`json_schema`、`strict:true`です。APIへ送るschemaは互換性を考慮した型とenum中心のsubsetで、名前・範囲・EMAの大小・必須filter等はローカルで追加検証します。wire schema hashとローカルpolicyを別に記録します。
 
-将来は生成前に、試行回数・入力/出力上限・費用予約を専用台帳へ原子的に記録します。
-タイムアウトや拒否も予約を消費し、成功件数だけを課金上限の代わりに数えません。
-生成の再現性はモデル名とseedだけに依存せず、返ってきた候補そのものとhashを保存します。
+### 7.2 応答検証
 
-## 8. 研究台帳
+- 固定HTTPS宛先とpathへ1回送信し、自動retry・任意URL・redirect先への再送を行わない。
+- 応答サイズ、JSON重複キー、非有限数、未知の出力形式を検査する。
+- `status=completed`、単一のassistant出力、拒否・不完全・errorの不存在を確認する。
+- modelが固定snapshotと一致し、usageが非負整数で出力上限・合計・予約額と整合することを確認する。
+- 候補DSLを再検証する。数量、実行権限、採否基準、URL、コードの注入を拒否する。
+- 例外本文やHTTP error bodyをログへ出さず、固定の分類コードで失敗を記録する。
+
+Structured Outputsの受理、対象キーのmodel利用可否、実HTTPの遅延・失敗挙動、課金は、fixture試験だけでは証明しません。[Structured Outputs公式資料](https://developers.openai.com/api/docs/guides/structured-outputs)
+
+### 7.3 保存と再照合
+
+候補成果物は要求書、検証済みcandidate、semantic candidate hash、生成方式、完了receipt、全体hashを含みます。receiptにはmodel、response ID、usage、予約・料金policy識別子、予約額、usage換算額、作成・完了時刻、応答hashを結び付けます。生のAPI応答や秘密は成果物へ含めません。
+
+専用ディレクトリへ、サイズを限定したregular fileを所有者限定権限で作成します。symlink、未知キー、改ざん、不完全保存、既存の別内容への上書きを拒否します。予算台帳をCOMPLETEDへ確定してから成果物を保存するため、その間で中断したときは「完了receiptはあるが成果物なし」となります。この状態を自動再送で埋めず、証跡を保全して停止します。
+
+`evaluate-artifact`は、同じCSV・設定・現在の評価コードから要求書を再構築し、保存された要求書と全照合します。成果物を単独の命令や任意providerとして実行しません。exact `FixtureProvider`またはexact `ArtifactProvider`だけを入口にし、継承や任意transport注入による拡張を拒否します。成果物の評価は1試行固定です。
+
+hashは内容の対応を検出する仕組みであり、提供元署名ではありません。ファイルを書き換える権限を持つ所有者がhashも再計算した場合まで、実APIの真正性を保証するものではありません。生成記録・台帳・固定releaseと併せて確認します。
+
+### 7.4 費用の算出と予約
+
+2026-11-06確認のGPT-4.1公式仕様を基に、全コンテキスト1,047,576tokenと出力上限2,048tokenを、割引なしの入力2 / 出力8 microUSD毎tokenで計上し、2,111,536 microUSDを予約します。入力サイズから不確かなtoken見積りを作るより保守的な方法であり、毎回その額が請求されるという意味ではありません。[固定モデル公式仕様](https://developers.openai.com/api/docs/models/gpt-4.1)
+
+`actual_microusd`は応答usageを通常単価で換算した監査値です。キャッシュ割引・請求書・税・為替は反映せず、実支出の確認とは区別します。fixtureのusageと換算額は模擬値です。本版では成功後も差額を解放せず、予約額の累積を上限制御に使用します。
+
+料金版と確認期限を台帳に固定し、期限切れや変更を検出したら新規live送信を停止します。モデルは2027-01-14停止予定で、料金の期限は2026-12-06 00:00 UTCです。別modelへの自動fallbackはありません。[公式廃止予定](https://developers.openai.com/api/docs/deprecations)
+
+## 8. 二つの独立した台帳
+
+### 8.1 評価側の研究台帳
 
 SQLiteは研究専用ディレクトリ内に作ります。既存の無関係なファイルがあるディレクトリ、symlink、未知のmarkerは拒否します。
 マーカーは既存DBを書き換えてよい承認ではなく、専用出力領域であることの確認に使います。
@@ -212,40 +236,57 @@ SQLiteは研究専用ディレクトリ内に作ります。既存の無関係�
 監査テーブルは更新・削除をトリガーで拒否します。実験manifestも同じrunの途中で差し替えできません。
 ファイルを管理する所有者がDB全体を置き換える行為まで防ぐものではありません。
 
+### 8.2 生成側の費用台帳
+
+`--state`の配下でfixtureとliveを分離します。各modeのprivate directoryは、markerと固定名`budget.sqlite3`を持ちます。`init`だけが空の専用領域を初期化します。`generate`はDBがなければ停止し、新しいDBを自動作成しません。
+
+上限は正の整数5項目です。1回金額 ≤ 日次金額 ≤ 累積金額、日次回数 ≤ 累積回数を要求し、上限と料金policy hashを保存します。既存台帳へ別の上限・料金版を渡して上書きしません。金額の単位はUSDの100万分の1です。
+
+送信前の予約では`BEGIN IMMEDIATE`を使い、request/context hash、時刻、固定予約額、モデル・料金版、回数と監査を同一トランザクションで確定します。request hashを一意にし、並列プロセスの確認と挿入を分離しません。完了処理はRESERVEDからCOMPLETEDまたはFAILEDへの一方向の遷移です。
+
+UTC日付で日次枠を管理します。当日予約、過去日の未確定・失敗予約、過去日の予約で当日に完了した分を、いずれも満額で当日の費用露出へ計上します。これは予約日・完了日に基づく保守的制限で、提供者の会計日の保証ではありません。時刻の巻戻しは拒否します。累積枠と試行数は翌日も補充しません。台帳全体の削除・別volumeの使用・別用途のキー利用は、技術的な予算制御の外側です。resetやtop-upで継続する操作は用意しません。
+
 ## 9. 再起動と障害
 
 | 検出した状態 | 処理 |
 |---|---|
-| 完了済みrun、manifest一致 | 保存済み結果を返す。再生成・再評価しない |
-| 同じrun、manifest不一致 | 拒否。新しい実験IDが必要 |
-| 予約だけ保存され候補なし | 中断した試行として失敗確定。回数は消費済み |
-| 候補保存済み、結果なし | 同一候補を同じデータ・評価器で評価する |
-| 最終評価予約済み、結果なし | 期間は消費済みとして扱う。別候補でやり直さない |
-| 不正候補・重複候補 | 記録して次の試行へ進む。上限は増やさない |
-| 台帳異常・保存失敗・監査不整合 | 研究を停止。Botには操作を送らない |
+| 評価run完了・manifest一致 | 保存済み結果を返す。再生成・再評価しない |
+| 評価runのmanifest不一致 | 拒否。コード・入力・候補の変更を調べる |
+| fixture探索の予約だけ残り候補なし | 中断試行として失敗確定し、回数を消費 |
+| 評価候補保存済み・結果なし | 同じ候補を同じデータ・評価器で評価する |
+| 最終評価予約済み・結果なし | 期間は消費済み。別候補でやり直さない |
+| generatorの同requestがRESERVED / FAILED | 新規HTTPを送らない。予約を保持して停止 |
+| generatorがCOMPLETED・成果物が有効 | 保存済み候補を返す。HTTPなし |
+| generatorがCOMPLETED・成果物欠損 / 不整合 | 自動再送せず停止。台帳・証跡を保全 |
+| HTTP失敗 / 拒否 / model・usage不整合 | 失敗記録を残し予約額を保持。retryなし |
+| 日次・累積枠 / 期限 / 台帳・保存異常 | 新しい候補生成を止める。Bot操作は送らない |
 
-MVPは常駐ジョブの自動回復サービスではありません。実行途中に停止した場合は、同じmanifestで明示的に再実行します。
-cron/systemd等による定期研究は、実データの準備・重複期間・CPU予算・費用上限を確認した後の追加です。
+常駐の自動回復サービスや定期研究ジョブは本版にありません。研究の失敗によって既存Botの決済監視を止めたり、口座を初期化したりしません。
 
 ## 10. Docker隔離
 
-`compose.ai-lab.yaml` は既存Composeと別に起動します。
+各Composeファイルはstandaloneです。既存BotのComposeと合成せず、fixture用とlive用も重ねて読み込みません。
 
-- project：`coincheck-ai-lab-mvp`。
-- サービス：one-shotの `research` だけ。DB/API/frontendの既存サービスを参照しない。
-- `network_mode: none`。公開ポートも秘密mountもなし。
-- 非root、read-only rootfs、capabilities全削除、no-new-privileges。
-- CPU、メモリ、PID、tmpfs、ログサイズを制限。
-- 研究用volumeだけ書込み可能。Docker socket、host network、privilegedなし。
-- Python base imageは既存プロジェクトで採用しているdigestへ固定。追加pip依存なし。
+| 実行構成 | 通信 | 秘密 | 主な入出力 |
+|---|---|---|---|
+| `compose.ai-lab.yaml` | `network_mode:none` | なし | 専用研究volume |
+| `compose.ai-lab.phase2.yaml` | `network_mode:none` | なし | read-only要求書・limits、専用生成state |
+| `compose.ai-lab.phase2.live.yaml` | 専用egress network | generator用キーだけ | read-only要求書・limits、live専用台帳領域 |
 
-Dockerの隔離はホスト管理者侵害への完全防御ではありません。
-また、通常のホストPythonで実行するCLIにはOSレベルの通信遮断がないため、MVPコードに通信経路がないことの確認とDockerでの検証を区別します。
+生成器は非root UID10002、評価器はUID10001です。rootfs read-only、capabilities全削除、no-new-privileges、CPU・メモリ・PID・tmpfs・ログ上限を適用します。公開ポート、Docker socket、host network、privileged、BotのPostgreSQL接続は設けません。書込み対象はそれぞれの専用volumeです。
+
+生成イメージは許可する小さいモジュール集合だけをCOPYし、Botや評価器を持ちません。評価イメージにHTTP関連モジュールのファイルが存在しても、それを通信権限がある証拠とは扱いません。評価CLIの入口制限、秘密拒否、Dockerのnetworkなしを組み合わせます。
+
+live生成器のコードは`api.openai.com`へのHTTPS要求に固定します。一般のDocker bridgeがドメイン単位で外向き通信を制限するわけではありません。ホストPythonでCLIを実行しただけでもOSの通信遮断は成立しません。この違いを実隔離試験の記録に残します。
+
+Compose secretsはファイルmountです。ホスト侵害に耐える保管庫ではなく、ファイルbind型の実装では設定したuid/modeが期待通り変わらない場合があります。実キーを使う前に、内容を表示せずに実行UID・親ディレクトリ・file mode・read-only mount・必要プロセスだけの読取りを確認します。
+
+成果物は生成側から明示的にコピーし、評価側へ読み取り専用入力として渡します。予算DBやキーを評価器へ共有してはいけません。ファイルの権限と所有者は受け渡し先で再確認します。コンテナ分離はホスト管理者侵害への完全防御ではありません。
 
 ## 11. 結果画面と公開範囲
 
 HTMLは保存済み台帳から生成する静的ファイルです。現在の残高・価格・運転状態をリアルタイム表示する画面ではありません。
-合成/実データ区分、試行数、購入予算、固定戦略との比較、不採用理由、最終評価の使用状況、manifestを表示します。
+合成/実データ区分、fixture/成果物の生成方式、上流の生成記録、評価器の通信0、試行数、購入予算、固定戦略との比較、不採用理由、最終評価の使用状況、manifestを表示します。上流呼出しの表示は当該成果物の完了応答申告であり、失敗を含む全試行数は生成費用台帳で確認します。fixtureのusage・費用は模擬値として扱い、実課金とは表示しません。
 文字列はHTML escapeし、JavaScript・外部フォント・外部画像・外部APIを使いません。CSPは `default-src 'none'` とします。
 
 新しいHTTP管理APIを追加していないため、既存フロントの認証境界を変更しません。
@@ -255,9 +296,9 @@ HTMLは保存済み台帳から生成する静的ファイルです。現在の�
 
 実データの独立検証、板・取引費用の校正、長い保有期間を考慮した標本数、候補数を踏まえた統計検定、継続的な将来データ比較が必要です。
 価格データの真正性はhashだけでは証明できません。hashは同一性を確認する仕組みです。
-OpenAI実通信・モデル選定・品質評価・費用台帳と、任意Pythonのコード生成・隔離実行は今後の段階です。
+実OpenAI応答・対象プロジェクトの利用可否・実請求照合・生成品質は別途検収が必要です。多段の実AI探索、定期実行、自動採用、任意Pythonのコード生成・隔離実行は未実装です。費用台帳の制御は同じ永続stateを保持する範囲で、他用途のAPI利用やホスト側の履歴破棄は集計しません。
 
-この技術書だけを根拠に実売買へ切り替えることはできません。今回の実施範囲は [検収書](ACCEPTANCE_20261105.md) で確認してください。
+この技術書だけを根拠に実売買へ切り替えることはできません。今回の実施範囲は[Phase 2検収書](ACCEPTANCE_PHASE2_20261106.md)、過去MVPは[2026-11-05の記録](ACCEPTANCE_20261105.md)で確認してください。
 
 ## 参考資料
 

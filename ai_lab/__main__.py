@@ -20,7 +20,7 @@ class Parser(argparse.ArgumentParser):
 
 
 def parser():
-    root=Parser(description="Coincheck Bot offline research MVP. No API keys or network required.")
+    root=Parser(description="Coincheck Bot offline research and candidate evaluation. No API keys or network required.")
     sub=root.add_subparsers(dest="command",required=True,parser_class=Parser)
     for name in ("demo","run","status"):
         command=sub.add_parser(name)
@@ -38,6 +38,18 @@ def parser():
     validate=sub.add_parser("validate-data")
     validate.add_argument("--csv",type=Path,required=True)
     validate.add_argument("--as-of")
+    prepare=sub.add_parser("prepare-proposal")
+    prepare.add_argument("--csv",type=Path,required=True)
+    prepare.add_argument("--as-of")
+    prepare.add_argument("--output",type=Path,required=True)
+    prepare.add_argument("--buy-budget-jpy",type=int,default=50000)
+    artifact=sub.add_parser("evaluate-artifact")
+    artifact.add_argument("--csv",type=Path,required=True)
+    artifact.add_argument("--as-of")
+    artifact.add_argument("--artifact",type=Path,required=True)
+    artifact.add_argument("--workspace",type=Path,default=Path("runtime/ai_lab"))
+    artifact.add_argument("--run-id",required=True)
+    artifact.add_argument("--buy-budget-jpy",type=int,default=50000)
     return root
 
 
@@ -71,10 +83,15 @@ def _save(snapshot,ledger):
     report=ledger.root/(run_id+".html")
     write_report(snapshot,report)
     result=snapshot["run"].get("result") or {}
+    manifest=snapshot["run"]["manifest"]
     print(canonical_json({"run_id":run_id,"status":snapshot["run"]["status"],
                           "outcome":result.get("outcome","INCOMPLETE"),
                           "trial_count":len(snapshot["trials"]),"reasons":result.get("reasons",[]),
-                          "report":str(report),"actual_openai_calls":0,"deployment_enabled":False}))
+                          "report":str(report),"actual_openai_calls":0,
+                          "actual_openai_calls_scope":"offline_evaluator_only",
+                          "generation_mode":manifest.get("generation_mode","fixture"),
+                          "upstream_openai_calls_reported":manifest.get("upstream_openai_calls_reported",0),
+                          "deployment_enabled":False}))
 
 
 def main(argv=None):
@@ -84,6 +101,25 @@ def main(argv=None):
         data=load_csv(args.csv,as_of=_cutoff(args.as_of))
         print(canonical_json({"data":data.metadata(),"splits":chronological_split(data)}))
         return 0
+    if args.command == "prepare-proposal":
+        from .engine import prepare_proposal
+        from .phase2_artifacts import write_json_file
+        data=load_csv(args.csv,as_of=_cutoff(args.as_of))
+        envelope=prepare_proposal(data,buy_budget_jpy=args.buy_budget_jpy)
+        write_json_file(args.output,envelope)
+        print(canonical_json({"status":"PREPARED","request_hash":envelope["binding"]["request_hash"],
+                              "envelope_hash":envelope["envelope_hash"],"output":str(args.output),
+                              "actual_openai_calls":0,"deployment_enabled":False}))
+        return 0
+    provider=None
+    if args.command == "evaluate-artifact":
+        from .artifact_provider import ArtifactProvider
+        from .engine import prepare_proposal
+        from .phase2_artifacts import load_candidate
+        # Validate the entire handoff before even creating a research ledger.
+        data=load_csv(args.csv,as_of=_cutoff(args.as_of))
+        expected=prepare_proposal(data,buy_budget_jpy=args.buy_budget_jpy)
+        provider=ArtifactProvider(load_candidate(args.artifact,expected_envelope=expected))
     ledger=Ledger(args.workspace)
     try:
         if args.command == "status":
@@ -100,13 +136,14 @@ def main(argv=None):
             data=load_csv(file) if file.exists() else make_fixture(file,days=args.days,seed=args.seed)
             if data.source!="synthetic" or len(data.candles)!=args.days*288:
                 raise LabError("FIXTURE_IDENTITY_INVALID")
-        else:
+        elif args.command != "evaluate-artifact":
             data=load_csv(args.csv,as_of=_cutoff(args.as_of))
         from .engine import run_research
         def progress(index,status):
             print(canonical_json({"event":"trial_finished","trial":index+1,"status":status}),flush=True)
-        snapshot=run_research(data,ledger,args.run_id,max_trials=args.max_trials,
+        snapshot=run_research(data,ledger,args.run_id,max_trials=1 if provider is not None else args.max_trials,
                               buy_budget_jpy=args.buy_budget_jpy,progress=progress,
+                              provider=provider,
                               fixture_seed=args.seed if args.command=="demo" else None)
         _save(snapshot,ledger)
         return 0

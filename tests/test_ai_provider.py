@@ -34,6 +34,8 @@ class ProviderTests(unittest.TestCase):
         self.assertIs(request["store"],False)
         self.assertIs(request["text"]["format"]["strict"],True)
         self.assertIs(request["text"]["format"]["schema"]["additionalProperties"],False)
+        self.assertNotIn("pattern",request["text"]["format"]["schema"]["properties"]["name"])
+        self.assertNotIn("minimum",request["text"]["format"]["schema"]["properties"]["ema_fast"])
         self.assertEqual(request["input"][0],{"role":"developer","content":PROMPT})
 
     def test_refusal_and_incomplete_are_not_candidates(self):

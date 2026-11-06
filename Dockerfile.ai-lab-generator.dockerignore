@@ -1,0 +1,13 @@
+# Only the generator dependency closure enters the build context.
+*
+!ai_lab/
+!ai_lab/__init__.py
+!ai_lab/contracts.py
+!ai_lab/provider.py
+!ai_lab/policy.json
+!ai_lab/proposal_context.py
+!ai_lab/phase2.py
+!ai_lab/phase2_artifacts.py
+!ai_lab/phase2_budget.py
+!ai_lab/phase2_policy.py
+!ai_lab/phase2_gateway.py

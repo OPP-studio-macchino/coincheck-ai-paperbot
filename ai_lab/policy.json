@@ -1,6 +1,6 @@
 {
   "policy_version": "ai-lab-policy-v1",
-  "canonical_spec_version": "ai-self-improvement-v0.1",
+  "canonical_spec_version": "ai-self-improvement-v0.2",
   "schema_version": "1",
   "mode": "offline_research",
   "max_trials": 8,

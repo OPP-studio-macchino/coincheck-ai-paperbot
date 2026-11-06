@@ -1,7 +1,7 @@
 name: Paper-only security CI
 on:
   push:
-    branches: [main, 'security/**', 'feat/ai-self-improvement-*']
+    branches: [main, 'security/**', 'feat/ai-self-improvement-*', 'feat/ai-integration-*']
   pull_request:
 permissions:
   contents: read
@@ -54,6 +54,17 @@ jobs:
       - name: Build immutable-base paper-only image (no secrets)
         run: docker build --build-arg APP_GIT_SHA="${{ github.sha }}" -t paperbot-security-ci:${{ github.sha }} .
 
+      - name: Non-destructive migration and role/stop regression on a fresh CI DB
+        run: |
+          docker compose --project-name coincheck-ai-security-ci up -d --wait db
+          docker compose --project-name coincheck-ai-security-ci --profile migration run --build --rm migration
+          docker compose --project-name coincheck-ai-security-ci --profile migration run --rm \
+            -e SECURITY_ISOLATED_TEST=YES_CLONE migration python -m app.security_e2e
+
+      - name: Stop only the disposable CI project (retain volumes)
+        if: always()
+        run: docker compose --project-name coincheck-ai-security-ci stop
+
       - name: Build offline research image
         run: docker build -f Dockerfile.ai-lab --build-arg APP_GIT_SHA="${{ github.sha }}" -t coincheck-ai-lab-ci .
       - name: Exercise bounded research with no network and no credentials
@@ -63,3 +74,9 @@ jobs:
             --tmpfs /var/lib/ai-lab:rw,nosuid,nodev,noexec,size=64m,uid=10001,gid=10001 \
             coincheck-ai-lab-ci demo --workspace /var/lib/ai-lab/research \
               --run-id ci-offline --max-trials 3 --buy-budget-jpy 13000
+
+      - name: Build isolated generator with no secrets
+        run: docker build -f Dockerfile.ai-lab-generator --build-arg APP_GIT_SHA="${{ github.sha }}" -t coincheck-ai-generator-ci .
+
+      - name: Verify generator to evaluator handoff in separate network-disabled containers
+        run: python scripts/verify_ai_isolation.py

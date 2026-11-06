@@ -11,7 +11,7 @@ import re
 from datetime import datetime, timedelta
 
 from .contracts import (BASELINE, POLICY, LabError, canonical_json, digest,
-                        proposal_schema, strict_json, validate_candidate)
+                        proposal_schema, responses_proposal_schema, strict_json, validate_candidate)
 
 PROMPT_VERSION = "strategy-proposer-v1"
 PROMPT = """Propose one research-only strategy candidate matching the supplied JSON schema.
@@ -105,7 +105,7 @@ def build_responses_request(context: dict, *, model: str, max_output_tokens: int
             "input":[{"role":"developer","content":PROMPT},
                      {"role":"user","content":canonical_json(safe)}],
             "text":{"format":{"type":"json_schema","name":"strategy_candidate_v1",
-                              "strict":True,"schema":proposal_schema()}}}
+                              "strict":True,"schema":responses_proposal_schema()}}}
 
 
 def parse_responses_output(response: dict | str | bytes) -> dict:

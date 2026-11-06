@@ -1,0 +1,46 @@
+# Separate standalone opt-in project. Never stack with the Bot or fixture file.
+# A network name does not restrict egress to OpenAI; the code fixes its endpoint.
+name: coincheck-ai-lab-phase2
+services:
+  generator:
+    profiles: [live]
+    build:
+      context: .
+      dockerfile: Dockerfile.ai-lab-generator
+      args:
+        APP_GIT_SHA: ${APP_GIT_SHA:-unversioned}
+    restart: "no"
+    read_only: true
+    user: "10002:10002"
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    pids_limit: 32
+    mem_limit: 256m
+    cpus: 0.5
+    networks: [generator_egress]
+    tmpfs:
+      - /tmp:size=16m,noexec,nosuid,nodev
+    environment:
+      DRY_RUN: "true"
+      LIVE_TRADING_ENABLED: "false"
+      NEWS_MODE: mock
+      AI_LAB_PHASE2_LIVE: ${AI_LAB_PHASE2_LIVE:-false}
+      OPENAI_API_KEY_FILE: /run/secrets/openai_api_key
+    secrets: [openai_api_key]
+    command: [status, --state, /var/lib/ai-generator, --mode, live]
+    volumes:
+      - phase2_data:/var/lib/ai-generator
+      - type: bind
+        source: ${AI_LAB_INPUT_DIR:-./runtime/ai-phase2-input}
+        target: /input
+        read_only: true
+    logging:
+      driver: json-file
+      options: {max-size: 1m, max-file: "2"}
+networks:
+  generator_egress: {}
+volumes:
+  phase2_data: {}
+secrets:
+  openai_api_key:
+    file: ${OPENAI_API_KEY_FILE:?Set a dedicated protected generator key file}
