@@ -1,0 +1,20 @@
+# Operator-only overlay. Base compose.yaml remains NEWS_MODE=mock.
+# Use only with an intentionally mounted OpenAI Platform key file.
+services:
+  market:
+    environment:
+      NEWS_MODE: "live"
+      ALLOW_BILLABLE_NEWS: "I_ACCEPT_BILLING"
+  news:
+    environment:
+      NEWS_MODE: "live"
+      ALLOW_BILLABLE_NEWS: "I_ACCEPT_BILLING"
+      NEWS_INTERVAL_SECONDS: "3600"
+      OPENAI_API_KEY_FILE: /run/secrets/openai_api_key
+    secrets:
+      - db_news_password
+      - openai_api_key
+
+secrets:
+  openai_api_key:
+    file: ./secrets/openai_api_key

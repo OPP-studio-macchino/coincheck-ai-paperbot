@@ -11,6 +11,7 @@ from .config import Settings
 from .market import PublicQuote,parse_coincheck_trades
 from .store import Store,bar_start,utc_now
 from .strategy import evaluate
+from .news_sources import valid_receipts
 
 logging.basicConfig(level=logging.INFO,format="%(asctime)s %(levelname)s %(message)s")
 URL="wss://ws-api.coincheck.com/"
@@ -23,10 +24,12 @@ def current_news(db:Store,now:datetime,mode:str="mock")->tuple[str,str]:
     if not row:return "unknown","no_assessment"
     state,summary,expires,sources,at=row
     if not expires or expires<=now:return "unknown","assessment_expired"
-    # This security release contains no independent publisher fetcher.
-    # A model's JSON or forged row is insufficient to authorize news_gate.
-    if state=="clear":return "unknown","independent_evidence_not_verified"
-    return ("block","headline_risk") if state=="block" else ("unknown","unverified_news")
+    receipts=valid_receipts(sources,now)
+    if state=="clear" and len(receipts)>=2 and len({r["publisher_host"] for r in receipts})>=2:
+        return "clear","verified_publisher_quorum"
+    if state=="block" and receipts:
+        return "block","verified_headline_risk"
+    return "unknown","unverified_news"
 
 def check_signal(db:Store,quotes:PublicQuote,s:Settings,now:datetime):
     history=db.history_status(now)

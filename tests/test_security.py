@@ -92,13 +92,16 @@ class NewsBoundaryTests(unittest.TestCase):
 
     def test_verified_evidence_requires_all_metadata(self):
         now=datetime.now(timezone.utc)
-        url="https://www.sec.gov/news"
+        url="https://www.coindesk.com/news"
+        other="https://cointelegraph.com/news"
         base={"state":"clear","summary":"published","valid_for_minutes":30,
-              "sources":[{"title":"SEC","url":url}]}
-        receipt={"url":url,"http_status":200,"content_sha256":"a"*64,
+              "sources":[{"title":"CoinDesk","url":url},{"title":"CT","url":other}]}
+        receipt={"publisher_host":"www.coindesk.com","title":"CoinDesk","url":url,"http_status":200,"content_sha256":"a"*64,
                  "published_at_utc":(now-timedelta(minutes=5)).isoformat(),
                  "fetched_at_utc":now.isoformat(),"factual_match":True}
-        self.assertEqual(validate_news(base,"fixture",{},now,[receipt]).state,"clear")
+        second={**receipt,"publisher_host":"cointelegraph.com","title":"CT","url":other,"content_sha256":"b"*64}
+        self.assertEqual(validate_news(base,"fixture",{},now,[receipt,second]).state,"clear")
+        self.assertEqual(validate_news(base,"fixture",{},now,[receipt]).state,"unknown")
         self.assertEqual(validate_news(base,"fixture",{},now,[{**receipt,"factual_match":False}]).state,"unknown")
         self.assertEqual(validate_news(base,"fixture",{},now,[{**receipt,"published_at_utc":(now-timedelta(days=3)).isoformat()}]).state,"unknown")
         self.assertEqual(validate_news(base,"fixture",{},now,[{**receipt,"http_status":404}]).state,"unknown")
@@ -112,7 +115,7 @@ class NewsBoundaryTests(unittest.TestCase):
         class DB:
             def latest_news(self):
                 now=datetime.now(timezone.utc)
-                return ("clear","forged",now+timedelta(minutes=25),[{"url":"https://www.sec.gov/x"}],now)
+                return ("clear","forged",now+timedelta(minutes=25),[{"url":"https://www.coindesk.com/x"}],now)
         self.assertEqual(current_news(DB(),datetime.now(timezone.utc),"mock")[0],"unknown")
         self.assertEqual(current_news(DB(),datetime.now(timezone.utc),"live")[0],"unknown")
 
