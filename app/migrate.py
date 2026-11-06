@@ -5,6 +5,7 @@ Migration service is the ONLY service with schema admin credentials.
 """
 from __future__ import annotations
 import os
+import re
 from pathlib import Path
 import sys
 from .config import Settings,read_secret
@@ -25,6 +26,27 @@ PASS_FILES = {
 }
 MIGRATION = "001_security_roles_audit_runtime"
 
+class MigrationFailure(RuntimeError):
+    """A redacted, actionable migration failure for the one-shot runner."""
+    def __init__(self, stage: str, cause: Exception):
+        self.stage = stage
+        self.category = type(cause).__name__
+        sqlstate = getattr(cause, "sqlstate", None)
+        self.sqlstate = sqlstate if isinstance(sqlstate, str) and re.fullmatch(r"[0-9A-Z]{5}", sqlstate) else None
+        super().__init__(stage)
+
+def _at_stage(stage: str, operation):
+    try:
+        return operation()
+    except MigrationFailure:
+        raise
+    except Exception as exc:
+        raise MigrationFailure(stage, exc) from None
+
+def _read_role_passwords():
+    return {role: _at_stage("secret_validation", lambda role=role: read_secret(
+        PASS_FILES[role], min_length=32)) for role in ROLE_NAMES}
+
 def _connect_admin():
     import psycopg
     name=os.environ.get("POSTGRES_DB","paperbot")
@@ -34,9 +56,11 @@ def _connect_admin():
         raise RuntimeError("Unexpected migration DB host")
     if not name.isidentifier() or not admin.isidentifier() or admin in ROLE_NAMES:
         raise RuntimeError("Bad migration database identity")
-    password=read_secret("DB_ADMIN_PASSWORD_FILE",min_length=32)
-    return psycopg.connect(host=host,dbname=name,user=admin,password=password,
-                           connect_timeout=8,autocommit=True),name,admin
+    password=_at_stage("secret_validation",lambda: read_secret("DB_ADMIN_PASSWORD_FILE",min_length=32))
+    conn=_at_stage("db_connection",lambda: psycopg.connect(
+        host=host,dbname=name,user=admin,password=password,
+        connect_timeout=8,autocommit=True))
+    return conn,name,admin
 
 def _grant(conn,role:str,tables:str,permissions:str):
     from psycopg import sql
@@ -52,20 +76,21 @@ def _seq(conn,role:str,seqs:str):
 
 def upgrade(conn,name:str,admin:str):
     from psycopg import sql
+    passwords=_read_role_passwords()
     with conn.transaction():
         # Password-bearing DDL must not be echoed on a PostgreSQL error.
         conn.execute("SET LOCAL log_min_error_statement = 'panic'")
         conn.execute("SET LOCAL log_statement = 'none'")
-        count=conn.execute("""SELECT count(*) FROM information_schema.tables
+        count=_at_stage("source_schema",lambda: conn.execute("""SELECT count(*) FROM information_schema.tables
             WHERE table_schema='public' AND table_name = ANY(%s)""",
-            (list(BASE_TABLES),)).fetchone()[0]
+            (list(BASE_TABLES),)).fetchone()[0])
         if count != len(BASE_TABLES):
-            raise RuntimeError("STOP source schema incomplete: migration cannot initialize balances")
+            raise MigrationFailure("source_schema",RuntimeError("incomplete"))
         if not conn.execute("SELECT 1 FROM pg_roles WHERE rolname=%s",(OWNER,)).fetchone():
             conn.execute(sql.SQL("CREATE ROLE {} NOLOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE").format(
                 sql.Identifier(OWNER)))
         for role in ROLE_NAMES:
-            p=read_secret(PASS_FILES[role],min_length=32)
+            p=passwords[role]
             if conn.execute("SELECT 1 FROM pg_roles WHERE rolname=%s",(role,)).fetchone():
                 conn.execute(sql.SQL("ALTER ROLE {} LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION PASSWORD {}").format(
                     sql.Identifier(role),sql.Literal(p)))
@@ -137,18 +162,18 @@ def rollback_permissions(conn,name:str,admin:str):
     print("MIGRATION_PERMISSIONS_ROLLED_BACK",MIGRATION,"(tables and balances retained)")
 
 def main():
-    Settings.load()
+    _at_stage("settings",Settings.load)
     if os.environ.get("NEWS_MODE","mock")!="mock":
-        raise RuntimeError("migrations for this acceptance must use NEWS_MODE=mock")
+        raise MigrationFailure("settings",RuntimeError("invalid news mode"))
     action=sys.argv[1] if len(sys.argv)>1 else "upgrade"
     if action not in ("upgrade","rollback-permissions"):
-        raise RuntimeError("Invalid migration action")
+        raise MigrationFailure("settings",RuntimeError("invalid action"))
     if action=="rollback-permissions" and os.environ.get("ALLOW_PERMISSION_ROLLBACK")!="CLONE_ONLY":
-        raise RuntimeError("rollback must be explicitly authorized on a cloned DB")
-    conn,name,admin=_connect_admin()
+        raise MigrationFailure("settings",RuntimeError("unauthorized rollback"))
+    conn,name,admin=_at_stage("db_connection",_connect_admin)
     try:
-        if action=="upgrade":upgrade(conn,name,admin)
-        else:rollback_permissions(conn,name,admin)
+        if action=="upgrade":_at_stage("upgrade",lambda: upgrade(conn,name,admin))
+        else:_at_stage("upgrade",lambda: rollback_permissions(conn,name,admin))
     finally:conn.close()
 
 if __name__=="__main__":
@@ -156,5 +181,10 @@ if __name__=="__main__":
         main()
     except Exception as exc:
         # Never echo SQL text or server errors containing role passwords.
-        print("MIGRATION_FAILED category="+type(exc).__name__,file=sys.stderr)
+        if isinstance(exc,MigrationFailure):
+            detail="MIGRATION_FAILED stage="+exc.stage+" category="+exc.category
+            if exc.sqlstate: detail+=" sqlstate="+exc.sqlstate
+        else:
+            detail="MIGRATION_FAILED stage=unexpected category="+type(exc).__name__
+        print(detail,file=sys.stderr)
         raise SystemExit(2)

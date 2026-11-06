@@ -16,6 +16,7 @@ from app.news import validate_news,assess_mock,_safe_https_url
 from app.market_worker import current_news
 from app.store import trailing_contiguous,bar_start
 from app.strategy import Candle
+from app.migrate import MigrationFailure,_at_stage
 
 class SettingsSecurityTests(unittest.TestCase):
     def _load(self,extra=None):
@@ -62,6 +63,24 @@ class SettingsSecurityTests(unittest.TestCase):
                 self.assertEqual(read_secret("ADMIN_TOKEN_FILE"),"x"*54)
             with patch.dict(os.environ,{"ADMIN_TOKEN_FILE":"rawsecret"}):
                 with self.assertRaises(RuntimeError):read_secret("ADMIN_TOKEN_FILE")
+
+    def test_migration_failure_is_stage_and_sqlstate_only(self):
+        class DatabaseFailure(Exception):
+            sqlstate="28P01"
+            def __str__(self): return "password=must-not-appear"
+        with self.assertRaises(MigrationFailure) as caught:
+            _at_stage("db_connection",lambda: (_ for _ in ()).throw(DatabaseFailure()))
+        failure=caught.exception
+        self.assertEqual((failure.stage,failure.category,failure.sqlstate),
+                         ("db_connection","DatabaseFailure","28P01"))
+        self.assertNotIn("must-not-appear",str(failure))
+        with self.assertRaises(MigrationFailure) as malformed:
+            _at_stage("upgrade",lambda: (_ for _ in ()).throw(type(
+                "BadSqlstate",(Exception,),{"sqlstate":"not-a-sqlstate"})()))
+        self.assertIsNone(malformed.exception.sqlstate)
+        for code in ("秘密情報値", "ABCDE\n", "abcde"):
+            self.assertIsNone(MigrationFailure("upgrade", type(
+                "InvalidSqlstate", (Exception,), {"sqlstate":code})()).sqlstate)
 
     def test_budget_contains_fees(self):
         asks=[(Decimal("8000000"),Decimal("1"))]
