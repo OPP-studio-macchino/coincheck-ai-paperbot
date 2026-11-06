@@ -123,7 +123,14 @@ class ResponsesGateway:
                 "Content-Type": "application/json", "Accept": "application/json"})
             reply = connection.getresponse()
             if reply.status != 200:
-                raise LabError("PHASE2_HTTP_FAILED")
+                # An HTTP status number is safe to report. Never include the
+                # provider response, headers, URL arguments or secret.
+                recognized = {400, 401, 402, 403, 404, 408, 409, 422, 429,
+                              500, 502, 503, 504}
+                status = reply.status
+                if type(status) is int and status in recognized:
+                    raise LabError("PHASE2_HTTP_STATUS_" + str(status))
+                raise LabError("PHASE2_HTTP_STATUS_OTHER")
             raw = reply.read(MAX_RESPONSE_BYTES + 1)
             if len(raw) > MAX_RESPONSE_BYTES:
                 raise LabError("PHASE2_HTTP_INVALID")
@@ -131,6 +138,9 @@ class ResponsesGateway:
             if not isinstance(value, dict):
                 raise LabError("PHASE2_HTTP_INVALID")
             return value
+        except LabError:
+            # Preserve only the bounded local classification, never remote text.
+            raise
         except Exception:
             raise LabError("PHASE2_HTTP_FAILED") from None
         finally:

@@ -177,6 +177,36 @@ class GeneratorTests(unittest.TestCase):
                 self.assertNotIn(self.canary,str(caught.exception))
                 self.assertFalse((state_path(state,"live")/"artifacts").exists())
 
+    def test_failure_code_is_bounded_and_reservation_is_not_retried(self):
+        self.init()
+        SpyGateway.error = LabError("PHASE2_HTTP_STATUS_429")
+        with self.assertRaisesRegex(LabError, "^PHASE2_GENERATION_FAILED$") as caught:
+            self.call()
+        self.assertEqual(caught.exception.safe_diagnostic, "PHASE2_HTTP_STATUS_429")
+        self.assertEqual(self.record()["status"], "FAILED")
+        self.assertEqual(self.record()["reserved_microusd"], RESERVATION_MICROUSD)
+        with self.assertRaises(LabError):
+            self.call()
+        self.assertEqual(SpyGateway.calls, 1)
+
+    def test_secret_in_exception_is_never_printed_as_failure_reason(self):
+        for reason in ("PHASE2_HTTP_STATUS_401", self.canary):
+            fake_error = LabError("PHASE2_GENERATION_FAILED")
+            fake_error.safe_diagnostic = reason
+            output = io.StringIO()
+            with patch("ai_lab.phase2.read_envelope", return_value=envelope()), \
+                 patch("ai_lab.phase2.generate", side_effect=fake_error), \
+                 contextlib.redirect_stderr(output):
+                self.assertEqual(main(["generate", "--state", str(self.root / "state"),
+                                       "--context", str(self.root / "unused.json"),
+                                       "--mode", "live"]), 1)
+            self.assertIn("PHASE2_COMMAND_FAILED", output.getvalue())
+            self.assertNotIn(self.canary, output.getvalue())
+            if reason.startswith("PHASE2_HTTP_STATUS_"):
+                self.assertIn("cause=" + reason, output.getvalue())
+            else:
+                self.assertNotIn("cause=", output.getvalue())
+
     def test_fixture_cannot_use_live_key_and_state_does_not_mix(self):
         self.init("fixture")
         with self.assertRaises(LabError):
@@ -246,6 +276,22 @@ class HTTPGatewayTests(unittest.TestCase):
                     ResponsesGateway(self.key,connection_factory=connection).send(self.request)
                 self.assertNotIn(self.key,str(caught.exception))
                 self.assertEqual(connection.calls,1);self.assertTrue(connection.closed)
+    def test_http_status_diagnostics_never_read_or_show_remote_error(self):
+        for status, expected in ((400, "PHASE2_HTTP_STATUS_400"),
+                                 (401, "PHASE2_HTTP_STATUS_401"),
+                                 (429, "PHASE2_HTTP_STATUS_429"),
+                                 (500, "PHASE2_HTTP_STATUS_500"),
+                                 (302, "PHASE2_HTTP_STATUS_OTHER")):
+            with self.subTest(status=status):
+                connection = self.connection(status=status, body=b"secret-canary-body")
+                with self.assertRaises(LabError) as caught:
+                    ResponsesGateway(self.key, connection_factory=connection).send(self.request)
+                self.assertEqual(str(caught.exception), expected)
+                self.assertNotIn("secret-canary-body", str(caught.exception))
+                self.assertNotIn(self.key, str(caught.exception))
+                self.assertEqual(connection.calls, 1)
+                self.assertTrue(connection.closed)
+
     def test_total_deadline_interrupts_slow_read_and_restores_handler(self):
         previous=signal.getsignal(signal.SIGALRM)
         connection=self.connection(delay=.2)
