@@ -161,6 +161,23 @@ class GeneratorTests(unittest.TestCase):
         with self.assertRaises(LabError): self.call()
         self.assertEqual(SpyGateway.calls, 1)
 
+    def test_live_spy_accepts_documented_cache_write_usage(self):
+        self.init()
+        # Matches the current Responses usage envelope, not a paid API call.
+        SpyGateway.value["usage"] = {
+            "input_tokens": 620,
+            "input_tokens_details": {"cached_tokens": 0, "cache_write_tokens": 0},
+            "output_tokens": 125,
+            "output_tokens_details": {"reasoning_tokens": 0},
+            "total_tokens": 745,
+        }
+        with patch("socket.socket", side_effect=AssertionError("NETWORK_FORBIDDEN")):
+            artifact = self.call()
+        self.assertEqual(artifact["generation"]["actual_microusd"], 620 * 2 + 125 * 8)
+        self.assertEqual(self.record()["status"], "COMPLETED")
+        self.assertEqual(self.record()["reserved_microusd"], RESERVATION_MICROUSD)
+        self.assertEqual(SpyGateway.calls, 1)
+
     def test_model_tier_usage_refusal_errors_are_not_candidates(self):
         bad = []
         for key, value in (("model","different-model"),("service_tier","priority"),
