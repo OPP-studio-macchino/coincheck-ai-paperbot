@@ -60,15 +60,35 @@ def normalize_usage(usage: dict) -> dict:
     if (counts["input_tokens"] > MAX_INPUT_TOKENS or counts["output_tokens"] > MAX_OUTPUT_TOKENS
             or counts["total_tokens"] != counts["input_tokens"] + counts["output_tokens"]):
         raise LabError("PHASE2_USAGE_INVALID")
-    for field, item, ceiling in (
-        ("input_tokens_details", "cached_tokens", counts["input_tokens"]),
-        ("output_tokens_details", "reasoning_tokens", counts["output_tokens"]),
-    ):
-        if field in usage:
-            details = usage[field]
-            if (type(details) is not dict or set(details) != {item} or type(details[item]) is not int
-                    or not 0 <= details[item] <= ceiling):
+    # The public Responses usage schema includes cache_write_tokens in
+    # input_tokens_details (and optionally its TTL breakdown). Reject unknown
+    # keys and unsafe values, but accept documented additive metadata. Pricing
+    # intentionally uses the uncached parent token counts, not these details.
+    if "input_tokens_details" in usage:
+        details = usage["input_tokens_details"]
+        allowed = {"cached_tokens", "cache_write_tokens", "cache_write_tokens_details"}
+        if (type(details) is not dict or "cached_tokens" not in details
+                or set(details) - allowed):
+            raise LabError("PHASE2_USAGE_INVALID")
+        for field in ("cached_tokens", "cache_write_tokens"):
+            if field in details:
+                value = details[field]
+                if type(value) is not int or not 0 <= value <= counts["input_tokens"]:
+                    raise LabError("PHASE2_USAGE_INVALID")
+        if "cache_write_tokens_details" in details:
+            breakdown = details["cache_write_tokens_details"]
+            if (type(breakdown) is not dict
+                    or set(breakdown) - {"ttl_12h_tokens", "ttl_30m_tokens"}):
                 raise LabError("PHASE2_USAGE_INVALID")
+            for value in breakdown.values():
+                if type(value) is not int or not 0 <= value <= counts["input_tokens"]:
+                    raise LabError("PHASE2_USAGE_INVALID")
+    if "output_tokens_details" in usage:
+        details = usage["output_tokens_details"]
+        if (type(details) is not dict or set(details) != {"reasoning_tokens"}
+                or type(details["reasoning_tokens"]) is not int
+                or not 0 <= details["reasoning_tokens"] <= counts["output_tokens"]):
+            raise LabError("PHASE2_USAGE_INVALID")
     return counts
 
 
