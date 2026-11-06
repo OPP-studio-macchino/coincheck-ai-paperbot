@@ -17,7 +17,7 @@ def once(cfg:Settings):
             db.record_news(out.state,out.summary,out.sources,out.expires_at,out.model,out.usage)
             return out.state
         # Atomic quota check + INSERT committed before calling the paid API.
-        attempt_id=db.reserve_news_attempt(limit=48)
+        attempt_id=db.reserve_news_attempt(limit=24)
         if attempt_id is None:
             out=assess_mock()
             db.record_news("unknown","Daily API attempt cap reached",[],
