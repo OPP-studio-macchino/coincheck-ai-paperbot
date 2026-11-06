@@ -15,6 +15,23 @@ from .proposal_context import build_request, validate_envelope
 from .provider import FixtureProvider, parse_responses_output
 
 
+# Fixed, reviewed diagnostics only. Exception text, provider error bodies and
+# arbitrary gateway strings must never enter the CLI output or audit trail.
+SAFE_FAILURE_DIAGNOSTICS = frozenset({
+    *(f"PHASE2_HTTP_STATUS_{x}" for x in
+      (400, 401, 402, 403, 404, 408, 409, 422, 429, 500, 502, 503, 504)),
+    "PHASE2_HTTP_STATUS_OTHER", "PHASE2_HTTP_FAILED",
+    "PHASE2_HTTP_INVALID", "RESPONSE_INCOMPLETE", "RESPONSE_ERROR",
+    "RESPONSE_OUTPUT_INVALID", "RESPONSE_MESSAGE_INVALID",
+    "RESPONSE_TOOLS_OR_UNKNOWN_OUTPUT", "RESPONSE_AMBIGUOUS_OUTPUT",
+    "RESPONSE_CONTENT_INVALID", "RESPONSE_SIZE_OR_TYPE",
+    "RESPONSE_ENCODING", "MODEL_REFUSAL", "PHASE2_RESPONSE_MODEL_OR_TIER",
+    "PHASE2_RESPONSE_USAGE", "PHASE2_USAGE_INVALID",
+    "PHASE2_STAGE_GATEWAY", "PHASE2_STAGE_PARSE",
+    "PHASE2_STAGE_METADATA",
+})
+
+
 def validate_environment(mode: str, environ=None) -> None:
     env = os.environ if environ is None else environ
     if mode not in ("fixture", "live"):
@@ -87,10 +104,13 @@ def generate(envelope: dict, *, state_root: Path, mode: str = "fixture",
             if artifact["generation"] != expected_generation:
                 raise LabError("PHASE2_RECEIPT_MISMATCH")
             return artifact
+        stage = "GATEWAY"
         try:
             response = (_fixture_response(safe, request_hash) if mode == "fixture"
                         else gateway_factory(key).send(request))
+            stage = "PARSE"
             candidate = parse_responses_output(response)
+            stage = "METADATA"
             if response.get("model") != MODEL or response.get("service_tier") != "default":
                 raise LabError("PHASE2_RESPONSE_MODEL_OR_TIER")
             usage = normalize_usage(response.get("usage"))
@@ -100,14 +120,22 @@ def generate(envelope: dict, *, state_root: Path, mode: str = "fixture",
                           model=response["model"], usage=usage,
                           candidate_hash=validate_candidate(candidate).strategy_hash,
                           response_hash=digest(response))
-        except Exception:
+        except Exception as exc:
+            # Capture only a fixed error category. Do not log exception strings,
+            # credentials, response bodies, input paths, headers or token data.
+            diagnostic = "PHASE2_STAGE_" + stage
+            if type(exc) is LabError and len(exc.args) == 1:
+                if type(exc.args[0]) is str and exc.args[0] in SAFE_FAILURE_DIAGNOSTICS:
+                    diagnostic = exc.args[0]
             # Never release a reservation: even an HTTP error may be charged.
             try:
                 if budget.get(request_hash)["status"] == "RESERVED":
                     budget.finish(request_hash, "FAILED")
             except Exception:
                 pass  # Original reservation remains fail-closed on a DB failure.
-            raise LabError("PHASE2_GENERATION_FAILED") from None
+            failure = LabError("PHASE2_GENERATION_FAILED")
+            failure.safe_diagnostic = diagnostic
+            raise failure from None
         receipt = budget.get(request_hash)
         generation = {"mode": "fixture" if mode == "fixture" else "openai_responses", **receipt}
         # COMPLETE first. A crash before durable artifact save consumes the attempt
@@ -155,10 +183,15 @@ def main(argv=None) -> int:
                                            (artifact["generation"]["request_hash"] + ".json"))}
         print(canonical_json({"mode": args.mode, "result": result}))
         return 0
-    except Exception:
-        # argparse arguments, key paths, HTTP bodies and DB errors can contain
-        # secrets. Print a fixed marker, not str(exc), repr(exc) or traceback.
-        print("AI_LAB_ERROR PHASE2_COMMAND_FAILED", file=sys.stderr)
+    except Exception as exc:
+        # Print only an internal allowlisted diagnostic. No exception string,
+        # response, request, path or key may be echoed.
+        diagnostic = getattr(exc, "safe_diagnostic", None)
+        if type(diagnostic) is str and diagnostic in SAFE_FAILURE_DIAGNOSTICS:
+            print("AI_LAB_ERROR PHASE2_COMMAND_FAILED cause=" + diagnostic,
+                  file=sys.stderr)
+        else:
+            print("AI_LAB_ERROR PHASE2_COMMAND_FAILED", file=sys.stderr)
         return 1
 
 
