@@ -1,0 +1,12 @@
+# Allowlist this image's context; do not inherit the Bot's docs/ exclusion.
+*
+!ai_lab/
+!ai_lab/**
+!app/
+!app/__init__.py
+!app/strategy.py
+!docs/
+!docs/ai-self-improvement/
+!docs/ai-self-improvement/SOURCE_OF_TRUTH.md
+**/__pycache__/
+**/*.pyc

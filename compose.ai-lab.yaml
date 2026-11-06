@@ -1,0 +1,34 @@
+# Intentionally standalone. Do not merge this file with the Bot's compose.yaml.
+name: coincheck-ai-lab-mvp
+services:
+  research:
+    build:
+      context: .
+      dockerfile: Dockerfile.ai-lab
+      args:
+        APP_GIT_SHA: ${APP_GIT_SHA:-unversioned}
+    restart: "no"
+    network_mode: none
+    read_only: true
+    user: "10001:10001"
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    pids_limit: 32
+    mem_limit: 512m
+    cpus: 0.5
+    tmpfs:
+      - /tmp:size=32m,noexec,nosuid,nodev
+    environment:
+      DRY_RUN: "true"
+      LIVE_TRADING_ENABLED: "false"
+      NEWS_MODE: "mock"
+      AI_LAB_PROVIDER: fixture
+    volumes:
+      - research_data:/var/lib/ai-lab
+    logging:
+      driver: json-file
+      options:
+        max-size: 5m
+        max-file: "2"
+volumes:
+  research_data: {}

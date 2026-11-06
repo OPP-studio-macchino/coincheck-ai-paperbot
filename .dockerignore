@@ -5,7 +5,14 @@
 secrets/
 runtime/
 backups/
-docs/
+# Classic Docker builders also need the single public research specification.
+# All other documents remain outside the context; BuildKit uses the stricter
+# Dockerfile.ai-lab.dockerignore allowlist for that image.
+docs/*
+!docs/ai-self-improvement/
+docs/ai-self-improvement/*
+!docs/ai-self-improvement/SOURCE_OF_TRUTH.md
+# Phase 2 receives its key only through a Compose secret mount.
 data/
 results/
 tests/

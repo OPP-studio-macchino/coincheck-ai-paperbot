@@ -1,0 +1,369 @@
+<!doctype html>
+<html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; img-src data:; base-uri 'none'; form-action 'none'">
+<meta name="referrer" content="no-referrer"><title>AI研究室 · docker-acceptance-13000</title>
+<style>
+:root{color-scheme:light;--ink:#152333;--muted:#637386;--line:#dbe3e9;--bg:#f3f6f8;--teal:#006b62}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.65 system-ui,-apple-system,'Noto Sans JP',sans-serif}
+main{max-width:1280px;margin:auto;padding:38px 32px 64px}header{display:flex;justify-content:space-between;gap:20px;align-items:flex-start}
+.eyebrow{color:var(--teal);font-weight:750;font-size:12px;letter-spacing:.13em}h1{font-size:34px;line-height:1.3;letter-spacing:-.03em;margin:7px 0 8px}h2{font-size:19px;margin:0 0 12px}
+p{margin:6px 0}.muted,small{color:var(--muted)}small{display:block;font-size:12px;margin-top:4px;overflow-wrap:anywhere}
+.badge{background:#e0f0eb;color:#155f4c;border:1px solid #b7ddcc;border-radius:25px;padding:7px 13px;white-space:nowrap;font-weight:650;font-size:12px}
+.notice{background:#fff7e1;border-left:4px solid #be8423;padding:15px 18px;margin:24px 0;color:#785515}
+.metrics{display:grid;grid-template-columns:repeat(4,1fr);gap:15px;margin-bottom:22px}.card{background:#fff;border:1px solid var(--line);border-radius:12px;padding:21px}
+.value{font-size:27px;font-weight:720;margin:8px 0 4px;line-height:1.25}.label{font-size:12px;color:var(--muted)}
+.summary{display:grid;grid-template-columns:1.3fr 1fr;gap:20px;margin-bottom:22px}.outcome{font-size:21px;font-weight:700;color:var(--teal)}
+.table-wrap{overflow-x:auto}table{border-collapse:collapse;width:100%;font-size:13px}th{font-weight:650;color:var(--muted);text-align:left;background:#f6f8fa}
+td,th{padding:14px 12px;border-bottom:1px solid var(--line);vertical-align:top}td:first-child{color:var(--muted)}.pill{font-size:11px;display:inline-block;padding:3px 8px;border-radius:5px;background:#edf1f5;font-weight:700}
+details{margin-top:22px}summary{cursor:pointer;font-weight:650}pre{white-space:pre-wrap;overflow-wrap:anywhere;background:#162536;color:#dce5ef;padding:20px;border-radius:10px;font-size:11px;max-height:520px;overflow:auto}
+footer{margin-top:24px;font-size:12px;color:var(--muted);border-top:1px solid var(--line);padding-top:18px}code{font-size:12px}
+@media(max-width:800px){main{padding:24px 16px}.metrics{grid-template-columns:repeat(2,1fr)}.summary{grid-template-columns:1fr}header{flex-direction:column}h1{font-size:27px}}
+</style></head><body><main>
+<header><div><div class="eyebrow">O.P.P STUDIO / COINCHECK BOT</div><h1>AI自己改善エンジン · 研究室</h1>
+<p class="muted">候補を作り、同じ条件で比較し、採否の根拠を残す。</p></div><span class="badge">研究専用 · 実口座未接続</span></header>
+<div class="notice">合成価格による機能検証。実相場の運用成績ではありません。　生成方式：固定応答（OpenAIへの送信・課金なし）</div>
+<div class="metrics"><section class="card"><div class="label">候補の試行数 / 上限</div><div class="value">6 / 6</div><small>失敗・不正・重複も消費に含めます</small></section>
+<section class="card"><div class="label">1回の仮想購入上限</div><div class="value">¥13,000</div><small>手数料込み · 初期仮想資金 ¥100,000</small></section>
+<section class="card"><div class="label">固定2時間足の開発区間損益</div><div class="value">¥454.05</div><small>費用仮定込み・評価用の区間末決済を含む</small></section>
+<section class="card"><div class="label">稼働Botへの自動反映</div><div class="value">無効</div><small>このMVPにはリリース・発注機能がありません</small></section></div>
+<div class="summary"><section class="card"><h2>今回の判定</h2><div class="outcome">採用候補なし</div><p>費用2倍の基準に未達 / 期間を分けた試験で安定性不足 / 決済件数が不足 / 費用込み利益が0円以下 / 固定戦略を上回らない / 利益が少数の取引に集中</p><small>候補が基準を満たしても、既存戦略・既存ポジションは変更しません。</small></section>
+<section class="card"><h2>未使用区間での最終確認</h2><p>未実施：開発区間の採用基準を通過した候補のみ確認</p><small>最終確認の成績は、次の候補生成へのフィードバックに渡しません。</small></section></div>
+<section class="card"><h2>候補と検証結果</h2><p class="muted">同じデータ分割・資金・費用・決済規則で比較します。ATR欄は損切り / 利確倍率です。</p>
+<div class="table-wrap"><table><thead><tr><th>#</th><th>候補</th><th>時間足・指標</th><th>ATR倍率</th><th>開発区間</th><th>状態・理由</th></tr></thead><tbody><tr><td>01</td>
+        <td><strong>fixture-candidate-01</strong><small>0cbbbbc25ed4</small></td>
+        <td>60分<br><small>EMA 21/55 · RSI 9</small></td>
+        <td>3.0 / 9.0</td>
+        <td>¥-212.65<small>DD 0.84% · 通常決済 12件</small></td>
+        <td><span class="pill">不採用</span><small>決済件数が不足 / 費用込み利益が0円以下 / 固定戦略を上回らない / 費用2倍の基準に未達 / 期間を分けた試験で安定性不足</small></td></tr><tr><td>02</td>
+        <td><strong>fixture-candidate-02</strong><small>c7bf73c352a5</small></td>
+        <td>30分<br><small>EMA 9/30 · RSI 14</small></td>
+        <td>2.0 / 6.0</td>
+        <td>¥-6.42<small>DD 0.28% · 通常決済 3件</small></td>
+        <td><span class="pill">不採用</span><small>決済件数が不足 / 費用込み利益が0円以下 / 固定戦略を上回らない / 利益が少数の取引に集中 / 費用2倍の基準に未達 / 期間を分けた試験で安定性不足</small></td></tr><tr><td>03</td>
+        <td><strong>fixture-candidate-03</strong><small>72470916cb7f</small></td>
+        <td>120分<br><small>EMA 21/55 · RSI 9</small></td>
+        <td>2.0 / 9.0</td>
+        <td>¥699.73<small>DD 0.43% · 通常決済 4件</small></td>
+        <td><span class="pill">不採用</span><small>決済件数が不足 / 利益が少数の取引に集中 / 期間を分けた試験で安定性不足</small></td></tr><tr><td>04</td>
+        <td><strong>fixture-candidate-04</strong><small>94e016af47d6</small></td>
+        <td>120分<br><small>EMA 21/55 · RSI 9</small></td>
+        <td>3.0 / 9.0</td>
+        <td>¥579.45<small>DD 0.49% · 通常決済 4件</small></td>
+        <td><span class="pill">不採用</span><small>決済件数が不足 / 利益が少数の取引に集中</small></td></tr><tr><td>05</td>
+        <td><strong>fixture-candidate-05</strong><small>e60105fbaad0</small></td>
+        <td>60分<br><small>EMA 34/89 · RSI 14</small></td>
+        <td>4.0 / 12.0</td>
+        <td>¥533.34<small>DD 0.53% · 通常決済 4件</small></td>
+        <td><span class="pill">不採用</span><small>決済件数が不足 / 利益が少数の取引に集中</small></td></tr><tr><td>06</td>
+        <td><strong>fixture-candidate-06</strong><small>19f3d0316d23</small></td>
+        <td>30分<br><small>EMA 21/55 · RSI 9</small></td>
+        <td>1.5 / 3.0</td>
+        <td>¥-150.41<small>DD 0.17% · 通常決済 7件</small></td>
+        <td><span class="pill">不採用</span><small>決済件数が不足 / 費用込み利益が0円以下 / 固定戦略を上回らない / 利益が少数の取引に集中 / 費用2倍の基準に未達 / 期間を分けた試験で安定性不足</small></td></tr></tbody></table></div></section>
+<details class="card"><summary>再現用の設定・データ識別子・判定根拠</summary><pre>{
+  &quot;manifest&quot;: {
+    &quot;actual_openai_calls&quot;: 0,
+    &quot;baseline_hash&quot;: &quot;101c5731135f16f74c5675a4f496ab4a504041b826ef4e72192ba60e2f1eeaae&quot;,
+    &quot;buy_budget_jpy&quot;: 13000,
+    &quot;dataset_hash&quot;: &quot;f27fb12925c839c66e5245eccb5703d4c18b8e84b449fda6db14270adb97fb33&quot;,
+    &quot;deployment_enabled&quot;: false,
+    &quot;execution&quot;: {
+      &quot;fee_bps_per_side&quot;: 0.0,
+      &quot;higher_ema_fast&quot;: 50,
+      &quot;higher_ema_slow&quot;: 200,
+      &quot;higher_timeframe_minutes&quot;: 240,
+      &quot;higher_warmup_bars&quot;: 300,
+      &quot;indicator_history_bars&quot;: 450,
+      &quot;local_warmup_bars&quot;: 200,
+      &quot;position_limit&quot;: 1,
+      &quot;same_bar_priority&quot;: &quot;stop_first&quot;,
+      &quot;signal_fill&quot;: &quot;next_5m_open&quot;,
+      &quot;slippage_bps_per_side&quot;: 10.0,
+      &quot;spread_bps_round_trip&quot;: 5.0
+    },
+    &quot;fixture_seed&quot;: 47,
+    &quot;initial_cash_jpy&quot;: 100000,
+    &quot;max_trials&quot;: 6,
+    &quot;model_id&quot;: &quot;fixture-not-an-openai-model&quot;,
+    &quot;policy_hash&quot;: &quot;e1dc75ad5084aa694c213f60423700d386c91f330e91ffbebd9853e46975a86b&quot;,
+    &quot;policy_version&quot;: &quot;ai-lab-policy-v1&quot;,
+    &quot;provenance&quot;: {
+      &quot;availability_assumption&quot;: &quot;provided_or_bar_close; not independently verified&quot;,
+      &quot;end_utc&quot;: &quot;2020-06-29T00:00:00+00:00&quot;,
+      &quot;interval_minutes&quot;: 5,
+      &quot;market_evidence&quot;: false,
+      &quot;provenance_verified&quot;: false,
+      &quot;rows&quot;: 51840,
+      &quot;sha256&quot;: &quot;f27fb12925c839c66e5245eccb5703d4c18b8e84b449fda6db14270adb97fb33&quot;,
+      &quot;source&quot;: &quot;synthetic&quot;,
+      &quot;source_is_self_declared&quot;: true,
+      &quot;start_utc&quot;: &quot;2020-01-01T00:00:00+00:00&quot;,
+      &quot;synthetic&quot;: true
+    },
+    &quot;provider&quot;: &quot;FixtureProvider&quot;,
+    &quot;provider_contract&quot;: {
+      &quot;model_id&quot;: &quot;fixture-not-an-openai-model&quot;,
+      &quot;network_enabled&quot;: false,
+      &quot;prompt_hash&quot;: &quot;0d437a42c8ace8d68beb245b08025ffce02fedab381afd28c71eafd64f775544&quot;,
+      &quot;prompt_version&quot;: &quot;strategy-proposer-v1&quot;,
+      &quot;provider_id&quot;: &quot;fixture-v1&quot;,
+      &quot;schema_hash&quot;: &quot;47e514dc93e87e4bb253e2444ba0b7a6c21dbcad2023f1c2cd63a1537244d3f5&quot;
+    },
+    &quot;provider_mode&quot;: &quot;offline_fixture&quot;,
+    &quot;screening&quot;: {
+      &quot;max_drawdown_pct&quot;: 10.0,
+      &quot;maximum_single_trade_profit_share&quot;: 0.5,
+      &quot;minimum_baseline_improvement_jpy&quot;: 0.0,
+      &quot;minimum_closed_trades&quot;: 20,
+      &quot;minimum_net_profit_jpy&quot;: 0.0,
+      &quot;minimum_positive_dev_folds&quot;: 2,
+      &quot;stress_cost_multiplier&quot;: 2.0
+    },
+    &quot;source&quot;: {
+      &quot;files&quot;: {
+        &quot;ai_lab/__init__.py&quot;: &quot;772fa6856b5925d1f73e1ae254c8b85efc7a9eaf530352dcede3c9339b3e1624&quot;,
+        &quot;ai_lab/__main__.py&quot;: &quot;33afaf3cdbb7d0e0d324f0fadc263d4848687d5996c9e76ca71d00107cce0572&quot;,
+        &quot;ai_lab/contracts.py&quot;: &quot;39f2d5da432f0ca4e1edc043d22613c856c4ce96927d65204255df930afbb3df&quot;,
+        &quot;ai_lab/dataset.py&quot;: &quot;4673c56bf88984812ef215ad8cab0c54e0519e4ff1a44df05e82bc688b8c339e&quot;,
+        &quot;ai_lab/engine.py&quot;: &quot;17173a14dd6ba23e088aedf4e2b4ce07e66ca5ca9a7f95f8cd5ceea5f729cd08&quot;,
+        &quot;ai_lab/evaluator.py&quot;: &quot;53c03b68db22228e8a16cd3e64b3401a24a316b193a5e4f22da66bdaa7cc0d7a&quot;,
+        &quot;ai_lab/ledger.py&quot;: &quot;2b58f53fae80fe2d36cf59b2f65d92edd2e14e9321929c22be9dde45272c95fa&quot;,
+        &quot;ai_lab/policy.json&quot;: &quot;e1dc75ad5084aa694c213f60423700d386c91f330e91ffbebd9853e46975a86b&quot;,
+        &quot;ai_lab/provider.py&quot;: &quot;131b214ed3e4afb30283db038a2e5d787315cf932537402448bbd01a00a12e0a&quot;,
+        &quot;ai_lab/report.py&quot;: &quot;fcad75c5c7d2afe70ba98790fc3c8f219fc522f3c4ddfa90480664217393d788&quot;,
+        &quot;ai_lab/screening.py&quot;: &quot;25440528f0af747b3a25fa7f3008aebe4923ecc1ceb63c906d873f15e6ad6ad4&quot;,
+        &quot;app/strategy.py&quot;: &quot;0b247cdc5d255cecadf410f18478c13914fc72d669feea300d49c496c25e884b&quot;,
+        &quot;docs/ai-self-improvement/SOURCE_OF_TRUTH.md&quot;: &quot;a8c445ed79fa09595650a345ae6ba74eb400f0d9a1e1532775308443b66ad8d9&quot;
+      },
+      &quot;python_version&quot;: &quot;3.12.16&quot;,
+      &quot;source_hash&quot;: &quot;86750724ed4ac9e74b130eaf17320cafa0f22dd6034efc449bc46c33900c633a&quot;
+    },
+    &quot;spec_version&quot;: &quot;ai-self-improvement-v0.1&quot;,
+    &quot;splits&quot;: {
+      &quot;development&quot;: [
+        33120,
+        42480
+      ],
+      &quot;holdout&quot;: [
+        42480,
+        51840
+      ],
+      &quot;train&quot;: [
+        14400,
+        33120
+      ],
+      &quot;warmup&quot;: [
+        0,
+        14400
+      ]
+    }
+  },
+  &quot;run_status&quot;: &quot;COMPLETED&quot;,
+  &quot;result&quot;: {
+    &quot;actual_openai_calls&quot;: 0,
+    &quot;baseline_development&quot;: {
+      &quot;ambiguous_exit_bars&quot;: 0,
+      &quot;assumptions&quot;: {
+        &quot;buy_budget_jpy&quot;: 13000.0,
+        &quot;closed_trades_and_profit_factor&quot;: &quot;natural_exits_only; excludes_forced_end&quot;,
+        &quot;end_liquidation&quot;: &quot;valuation_only_with_costs; excludes_order_minimum; not_a_natural_exit&quot;,
+        &quot;entry_atr_frozen&quot;: true,
+        &quot;execution_limits&quot;: &quot;OHLC simulation; no order_book, partial_fills, latency_or_liquidity_model&quot;,
+        &quot;exposure&quot;: &quot;five_minute_bars_with_any_position; intrabar_duration_unknown&quot;,
+        &quot;fee_bps_per_side&quot;: 0.0,
+        &quot;fill&quot;: &quot;next_5m_open&quot;,
+        &quot;gap_stop&quot;: &quot;worse_open_with_costs&quot;,
+        &quot;indicator_history_bars&quot;: 450,
+        &quot;market_evidence&quot;: false,
+        &quot;max_drawdown&quot;: &quot;five_minute_close_equity_and_final_liquidation; excludes_intrabar_extremes&quot;,
+        &quot;open_position_btc_and_unrealized_pnl&quot;: &quot;before_synthetic_end_liquidation&quot;,
+        &quot;profit_concentration&quot;: &quot;includes_positive_period_end_valuation&quot;,
+        &quot;same_bar_both_hit&quot;: &quot;stop_first&quot;,
+        &quot;simulation_only&quot;: true,
+        &quot;slippage_bps_per_side&quot;: 10.0,
+        &quot;source&quot;: &quot;synthetic&quot;,
+        &quot;spread_bps_round_trip&quot;: 5.0
+      },
+      &quot;closed_trades&quot;: 2,
+      &quot;end_utc&quot;: &quot;2020-05-27T12:00:00+00:00&quot;,
+      &quot;ending_equity_jpy&quot;: 100454.05387077612,
+      &quot;execution_cost_jpy&quot;: 65.56808074241059,
+      &quot;exposure_pct&quot;: 69.11324786324786,
+      &quot;forced_end_exits&quot;: 0,
+      &quot;gross_loss_jpy&quot;: 188.0234203462005,
+      &quot;gross_profit_jpy&quot;: 642.0772911223303,
+      &quot;initial_cash_jpy&quot;: 100000.0,
+      &quot;liquidated_end_equity_jpy&quot;: 100454.05387077612,
+      &quot;losing_trades&quot;: 1,
+      &quot;mark_to_market_equity_jpy&quot;: 100454.05387077612,
+      &quot;max_drawdown_pct&quot;: 0.5777723421288032,
+      &quot;max_holding_hours&quot;: 331.6666666666667,
+      &quot;max_single_trade_profit_share&quot;: 1.0,
+      &quot;net_profit_jpy&quot;: 454.0538707761152,
+      &quot;net_return_pct&quot;: 0.4540538707761055,
+      &quot;open_position_btc&quot;: 0.0,
+      &quot;period_end_pnl_jpy&quot;: 0,
+      &quot;profit_factor&quot;: 3.4148793269481925,
+      &quot;realized_pnl_jpy&quot;: 454.05387077612977,
+      &quot;rejected_entries&quot;: 0,
+      &quot;rejected_exits&quot;: 0,
+      &quot;start_utc&quot;: &quot;2020-04-25T00:00:00+00:00&quot;,
+      &quot;total_exit_records&quot;: 2,
+      &quot;total_fees_jpy&quot;: 0.0,
+      &quot;trades&quot;: [
+        {
+          &quot;cross_id&quot;: &quot;2020-04-26T12:00:00+00:00&quot;,
+          &quot;entry_atr&quot;: 42972.91246732253,
+          &quot;entry_outlay_jpy&quot;: 12999.968581111121,
+          &quot;entry_price_jpy&quot;: 10170289.05682946,
+          &quot;entry_time&quot;: &quot;2020-04-26T14:00:00+00:00&quot;,
+          &quot;exit_net_proceeds_jpy&quot;: 13642.045872233452,
+          &quot;exit_price_jpy&quot;: 10672606.551429283,
+          &quot;exit_reason&quot;: &quot;target&quot;,
+          &quot;exit_time&quot;: &quot;2020-05-05T05:25:00+00:00&quot;,
+          &quot;fees_jpy&quot;: 0.0,
+          &quot;forced_end&quot;: false,
+          &quot;holding_hours&quot;: 207.41666666666666,
+          &quot;pnl_jpy&quot;: 642.0772911223303,
+          &quot;quantity_btc&quot;: 0.00127823,
+          &quot;signal_end&quot;: &quot;2020-04-26T14:00:00+00:00&quot;,
+          &quot;stop_price_jpy&quot;: 10041370.319427492,
+          &quot;target_price_jpy&quot;: 10685964.00643733
+        },
+        {
+          &quot;cross_id&quot;: &quot;2020-05-04T22:00:00+00:00&quot;,
+          &quot;entry_atr&quot;: 47241.545662615514,
+          &quot;entry_outlay_jpy&quot;: 12999.912016746795,
+          &quot;entry_price_jpy&quot;: 10712388.563003112,
+          &quot;entry_time&quot;: &quot;2020-05-05T06:00:00+00:00&quot;,
+          &quot;exit_net_proceeds_jpy&quot;: 12811.888596400595,
+          &quot;exit_price_jpy&quot;: 10557450.596107747,
+          &quot;exit_reason&quot;: &quot;stop&quot;,
+          &quot;exit_time&quot;: &quot;2020-05-19T01:40:00+00:00&quot;,
+          &quot;fees_jpy&quot;: 0.0,
+          &quot;forced_end&quot;: false,
+          &quot;holding_hours&quot;: 331.6666666666667,
+          &quot;pnl_jpy&quot;: -188.0234203462005,
+          &quot;quantity_btc&quot;: 0.00121354,
+          &quot;signal_end&quot;: &quot;2020-05-05T06:00:00+00:00&quot;,
+          &quot;stop_price_jpy&quot;: 10570663.926015265,
+          &quot;target_price_jpy&quot;: 11279287.110954497
+        }
+      ],
+      &quot;unrealized_pnl_jpy&quot;: 0.0,
+      &quot;win_rate_pct&quot;: 50.0,
+      &quot;winning_trades&quot;: 1
+    },
+    &quot;baseline_stress&quot;: {
+      &quot;ambiguous_exit_bars&quot;: 0,
+      &quot;assumptions&quot;: {
+        &quot;buy_budget_jpy&quot;: 13000.0,
+        &quot;closed_trades_and_profit_factor&quot;: &quot;natural_exits_only; excludes_forced_end&quot;,
+        &quot;end_liquidation&quot;: &quot;valuation_only_with_costs; excludes_order_minimum; not_a_natural_exit&quot;,
+        &quot;entry_atr_frozen&quot;: true,
+        &quot;execution_limits&quot;: &quot;OHLC simulation; no order_book, partial_fills, latency_or_liquidity_model&quot;,
+        &quot;exposure&quot;: &quot;five_minute_bars_with_any_position; intrabar_duration_unknown&quot;,
+        &quot;fee_bps_per_side&quot;: 0.0,
+        &quot;fill&quot;: &quot;next_5m_open&quot;,
+        &quot;gap_stop&quot;: &quot;worse_open_with_costs&quot;,
+        &quot;indicator_history_bars&quot;: 450,
+        &quot;market_evidence&quot;: false,
+        &quot;max_drawdown&quot;: &quot;five_minute_close_equity_and_final_liquidation; excludes_intrabar_extremes&quot;,
+        &quot;open_position_btc_and_unrealized_pnl&quot;: &quot;before_synthetic_end_liquidation&quot;,
+        &quot;profit_concentration&quot;: &quot;includes_positive_period_end_valuation&quot;,
+        &quot;same_bar_both_hit&quot;: &quot;stop_first&quot;,
+        &quot;simulation_only&quot;: true,
+        &quot;slippage_bps_per_side&quot;: 20.0,
+        &quot;source&quot;: &quot;synthetic&quot;,
+        &quot;spread_bps_round_trip&quot;: 10.0
+      },
+      &quot;closed_trades&quot;: 2,
+      &quot;end_utc&quot;: &quot;2020-05-27T12:00:00+00:00&quot;,
+      &quot;ending_equity_jpy&quot;: 100420.33559216236,
+      &quot;execution_cost_jpy&quot;: 131.05354114105342,
+      &quot;exposure_pct&quot;: 69.1025641025641,
+      &quot;forced_end_exits&quot;: 0,
+      &quot;gross_loss_jpy&quot;: 203.84493978556384,
+      &quot;gross_profit_jpy&quot;: 624.1805319479245,
+      &quot;initial_cash_jpy&quot;: 100000.0,
+      &quot;liquidated_end_equity_jpy&quot;: 100420.33559216236,
+      &quot;losing_trades&quot;: 1,
+      &quot;mark_to_market_equity_jpy&quot;: 100420.33559216236,
+      &quot;max_drawdown_pct&quot;: 0.5770986891108224,
+      &quot;max_holding_hours&quot;: 331.0,
+      &quot;max_single_trade_profit_share&quot;: 1.0,
+      &quot;net_profit_jpy&quot;: 420.3355921623588,
+      &quot;net_return_pct&quot;: 0.4203355921623686,
+      &quot;open_position_btc&quot;: 0.0,
+      &quot;period_end_pnl_jpy&quot;: 0,
+      &quot;profit_factor&quot;: 3.062035940674003,
+      &quot;realized_pnl_jpy&quot;: 420.3355921623606,
+      &quot;rejected_entries&quot;: 0,
+      &quot;rejected_exits&quot;: 0,
+      &quot;start_utc&quot;: &quot;2020-04-25T00:00:00+00:00&quot;,
+      &quot;total_exit_records&quot;: 2,
+      &quot;total_fees_jpy&quot;: 0.0,
+      &quot;trades&quot;: [
+        {
+          &quot;cross_id&quot;: &quot;2020-04-26T12:00:00+00:00&quot;,
+          &quot;entry_atr&quot;: 42972.91246732253,
+          &quot;entry_outlay_jpy&quot;: 12999.905477070404,
+          &quot;entry_price_jpy&quot;: 10182986.046912892,
+          &quot;entry_time&quot;: &quot;2020-04-26T14:00:00+00:00&quot;,
+          &quot;exit_net_proceeds_jpy&quot;: 13624.086009018329,
+          &quot;exit_price_jpy&quot;: 10671914.34402946,
+          &quot;exit_reason&quot;: &quot;target&quot;,
+          &quot;exit_time&quot;: &quot;2020-05-05T06:00:00+00:00&quot;,
+          &quot;fees_jpy&quot;: 0.0,
+          &quot;forced_end&quot;: false,
+          &quot;holding_hours&quot;: 208.0,
+          &quot;pnl_jpy&quot;: 624.1805319479245,
+          &quot;quantity_btc&quot;: 0.00127663,
+          &quot;signal_end&quot;: &quot;2020-04-26T14:00:00+00:00&quot;,
+          &quot;stop_price_jpy&quot;: 10054067.309510924,
+          &quot;target_price_jpy&quot;: 10698660.996520761
+        },
+        {
+          &quot;cross_id&quot;: &quot;2020-05-04T22:00:00+00:00&quot;,
+          &quot;entry_atr&quot;: 47241.545662615514,
+          &quot;entry_outlay_jpy&quot;: 12999.9457186434,
+          &quot;entry_price_jpy&quot;: 10725762.33149625,
+          &quot;entry_time&quot;: &quot;2020-05-05T06:00:00+00:00&quot;,
+          &quot;exit_net_proceeds_jpy&quot;: 12796.100778857835,
+          &quot;exit_price_jpy&quot;: 10557577.600272134,
+          &quot;exit_reason&quot;: &quot;stop&quot;,
+          &quot;exit_time&quot;: &quot;2020-05-19T01:00:00+00:00&quot;,
+          &quot;fees_jpy&quot;: 0.0,
+          &quot;forced_end&quot;: false,
+          &quot;holding_hours&quot;: 331.0,
+          &quot;pnl_jpy&quot;: -203.84493978556384,
+          &quot;quantity_btc&quot;: 0.00121203,
+          &quot;signal_end&quot;: &quot;2020-05-05T06:00:00+00:00&quot;,
+          &quot;stop_price_jpy&quot;: 10584037.694508404,
+          &quot;target_price_jpy&quot;: 11292660.879447635
+        }
+      ],
+      &quot;unrealized_pnl_jpy&quot;: 0.0,
+      &quot;win_rate_pct&quot;: 50.0,
+      &quot;winning_trades&quot;: 1
+    },
+    &quot;deployment_enabled&quot;: false,
+    &quot;final_test&quot;: null,
+    &quot;outcome&quot;: &quot;NO_IMPROVEMENT&quot;,
+    &quot;reasons&quot;: [
+      &quot;COST_STRESS_FAILED&quot;,
+      &quot;DEV_FOLD_STABILITY&quot;,
+      &quot;INSUFFICIENT_CLOSED_TRADES&quot;,
+      &quot;NET_NONPOSITIVE&quot;,
+      &quot;NO_BASELINE_IMPROVEMENT&quot;,
+      &quot;PROFIT_CONCENTRATION&quot;
+    ],
+    &quot;selected_candidate&quot;: null
+  },
+  &quot;final_tests&quot;: [],
+  &quot;event_chain_ok&quot;: true
+}</pre></details>
+<footer>実行ID：<code>docker-acceptance-13000</code>　記録時刻（UTC）：2026-11-05T07:46:57.505572+00:00<br>
+時刻はすべてUTC。表示は保存時点の研究結果で、現在の相場・資産評価ではありません。監査連鎖：整合。
+ローカルの管理者による台帳全体の改変まで防ぐ暗号署名ではありません。</footer>
+</main></body></html>

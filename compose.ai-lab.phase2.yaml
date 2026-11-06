@@ -1,0 +1,36 @@
+# Standalone fixture generator. No key, network, Bot DB or automatic generation.
+name: coincheck-ai-lab-phase2-fixture
+services:
+  generator:
+    build:
+      context: .
+      dockerfile: Dockerfile.ai-lab-generator
+      args:
+        APP_GIT_SHA: ${APP_GIT_SHA:-unversioned}
+    restart: "no"
+    network_mode: none
+    read_only: true
+    user: "10002:10002"
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    pids_limit: 32
+    mem_limit: 256m
+    cpus: 0.5
+    tmpfs:
+      - /tmp:size=16m,noexec,nosuid,nodev
+    environment:
+      DRY_RUN: "true"
+      LIVE_TRADING_ENABLED: "false"
+      NEWS_MODE: mock
+      AI_LAB_PHASE2_LIVE: "false"
+    volumes:
+      - phase2_data:/var/lib/ai-generator
+      - type: bind
+        source: ${AI_LAB_INPUT_DIR:-./runtime/ai-phase2-input}
+        target: /input
+        read_only: true
+    logging:
+      driver: json-file
+      options: {max-size: 1m, max-file: "2"}
+volumes:
+  phase2_data: {}

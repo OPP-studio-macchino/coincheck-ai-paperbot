@@ -1,0 +1,16 @@
+# Generator-only image: no Bot, exchange adapter, DB driver or evaluator.
+FROM python:3.12-slim@sha256:b18b261e1b4974b4f321451ad5251ded85abb22c2b8b262da527dda1d031ab30
+ARG APP_GIT_SHA=unversioned
+LABEL org.opencontainers.image.revision="${APP_GIT_SHA}"
+ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1
+WORKDIR /opt/generator
+RUN useradd --uid 10002 --no-create-home generator \
+    && mkdir -p /var/lib/ai-generator \
+    && chown 10002:10002 /var/lib/ai-generator \
+    && chmod 0700 /var/lib/ai-generator
+COPY ai_lab/__init__.py ai_lab/contracts.py ai_lab/provider.py ai_lab/policy.json \
+     ai_lab/proposal_context.py ai_lab/phase2.py ai_lab/phase2_artifacts.py \
+     ai_lab/phase2_budget.py ai_lab/phase2_policy.py ai_lab/phase2_gateway.py /opt/generator/ai_lab/
+USER 10002:10002
+ENTRYPOINT ["python", "-m", "ai_lab.phase2"]
+CMD ["status", "--state", "/var/lib/ai-generator", "--mode", "fixture"]
